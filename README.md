@@ -1,2 +1,2 @@
 # Typora
-note
+https://github.com/lpeiyi/Typora.git
