@@ -1,7 +1,4 @@
 # 一、类库
-
-
-
 ```python
 import cv2  # opencv读取的格式是BGR
 import matplotlib.pyplot as plt # 绘图工具:matplotli，专门用于画图
@@ -20,7 +17,7 @@ def cv_show(name,img):
 # 二、常用基础函数
 
 ## 2.1 imread
-
+图片读取
 ## 2.2 imshow
 
 ## 2.3 imwrite
