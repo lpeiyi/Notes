@@ -271,6 +271,13 @@ IDENTIFIED BY 密码
 [TEMPORARY TABLESPACE 临时表空间名]
 ```
 
+**注意：**创建用户后要赋权
+
+```sql
+grant Permissions to user;
+
+```
+
 ### 2.3.3 创建角色
 
 ```SQL
