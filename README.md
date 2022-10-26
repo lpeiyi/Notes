@@ -1,2 +1,2 @@
-# Typora
-https://github.com/lpeiyi/Typora.git
+# Notes
+https://github.com/lpeiyi/Notes.git
