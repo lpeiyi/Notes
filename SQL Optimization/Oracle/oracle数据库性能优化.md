@@ -200,6 +200,35 @@ Oracle 使用元指令对latch进行操作, 当所需的latch已被其他进程�
   - 保护关键资源的串行执行
   - 防止内存结构损坏
 
-### 2.4.2 Latch 的机制
+### 2.4.2 Latch 分类
+
+```sql
+select name from v$latchname;
+```
+
+latch有40余种，但作为DBA关心的主要应有以下几种：
+
+  **Cache buffers chains latch:** 当用户进程搜索SGA寻找database cache buffers时需要使用此latch。
+
+  **Cache buffers LRU chain latch:** 当用户进程要搜索buffer cache中包括所有 dirty blocks的LRU (least recently used) 链时使用该种latch。
+
+  **Redo log buffer latch:** 这种latch控制redo log buffer中每条redo entries的空间分配。
+
+  **Row cache objects latch:** 当用户进程访问缓存的数据字典数值时，将使用Row cache objects latch。
+
+### 2.4.3 Latch 的机制
 
 ![image-20221027153327196](oracle数据库性能优化.assets/image-20221027153327196.png)
+
+### 2.4.4 Latch的获取
+
+#### 2.4.4.1  Willing-to-wait
+
+如果所请求的latch不能立即得到，请求进程将等待一很短的时间后再次发出请求。进程一直重复此过程直到得到latch。
+
+- **spin：**当一个会话无法获得需要的latch时，会继续使用CPU(CPU 空转），达到一个间隔后， 再次尝试申请latch，直到达到最大的重试次数。
+- **sleep：**当一个会话无法获得需要的latch时，会等待一段时间（sleep)，达到一个间隔后，再次 尝试申请latch,如此反复，直到达到最大的重试次数。
+
+#### 2.4.4.2 Immediate
+
+如果所请求的latch不能立即得到，不会发生sleep或者spin，而是去获取其它可用的Latch继续执行下去。
