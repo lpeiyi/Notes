@@ -141,13 +141,13 @@
 
 **TM锁几种模式的互斥关系**
 
-| 模式 | 锁定的sql                                           | 排斥的模式 | 允许的dml                                 |
-| ---- | --------------------------------------------------- | ---------- | ----------------------------------------- |
-| 2    | lock table table_name in row share  mode;           | 6          | select,insert,update，delete，for  update |
-| 3    | lock table table_name  in row  exclusive mode;      | 4,5,6      | select,insert,update,delete，for  update  |
-| 4    | lock table table_name in share  mode;               | 3,5,6      | select                                    |
-| 5    | lock table table_name in share row  exclusive mode; | 3,4,5,6    | select                                    |
-| 6    | lock table table_name  in exclusive  mode;          | 2,3,4,5,6  | select                                    |
+| 模式 | 名称                                                         | 锁定的sql                                           | 排斥的模式 | 允许的dml                                 |
+| ---- | ------------------------------------------------------------ | --------------------------------------------------- | ---------- | ----------------------------------------- |
+| 2    | 行级共享锁，其他对象只能查询这些数据                         | lock table table_name in row  share mode;           | 6          | select,insert,update，delete，for  update |
+| 3    | 行级排他锁，在事务提交前不允许做DML操作                      | lock table table_name in row  exclusive mode;       | 4,5,6      | select,insert,update,delete，for  update  |
+| 4    | 共享锁，不允许DML,但是允许其他用户发出select …from for update命令对表添加RS锁 | lock table table_name in share  mode;               | 3,5,6      | select                                    |
+| 5    | 共享行级排他锁，不能对相同的表进行DML操作，也不能添加共享锁  | lock table table_name in share  row exclusive mode; | 3,4,5,6    | select                                    |
+| 6    | 排他锁，其他用户不能对表进行任何的DML和DDL操作，该表上只能进行查询 | lock table table_name in  exclusive mode;           | 2,3,4,5,6  | select                                    |
 
 ### 2.4.2 TX锁 【事务锁（行锁）】
 
