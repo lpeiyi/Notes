@@ -243,4 +243,25 @@ Latch导致的性能问题，通常是一个系统层面的问题：
 - 分析可能的原因
 - 从应用层面和数据库层面考虑解决途径。
 
-# 三、
+# 三、优化器
+
+```
+select t.table_name,t.column_name,t.num_distinct
+from user_tab_col_statistics t
+where t.table_name = 'EMP'
+order by 2 desc;
+```
+
+
+
+```
+SELECT T.INDEX_NAME,T.NUM_ROWS
+FROM USER_INDEXES T
+WHERE T.TABLE_NAME = 'EMP'
+ORDER BY T.NUM_ROWS DESC;
+```
+
+
+
+# 四、执行计划
+
