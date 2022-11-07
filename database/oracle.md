@@ -1248,14 +1248,30 @@ ORACLE 预定义的异常情况大约有 24 个。对这种异常情况的处理
 
 ## 8.3 运维脚本
 
-监控锁
+### 8.3.1 锁表操作
 
 ```sql
-SELECT B.SID,C.USERNAME,A.OBJECT_NAME,C.TERMINAL,B.ID2,B.TYPE,B.LMODE,B.REQUEST
-FROM DBA_OBJECTS A, V$LOCK B, V$SESSION C
-WHERE A.OBJECT_ID(+) = b.ID1
-  AND B.SID = C.SID
-  AND C.USERNAME IS NOT NULL
-  ORDER BY B.SID,B.ID2;
+SELECT A.OBJECT_NAME,
+            B.SESSION_ID,
+            C.SERIAL#,
+            C.PROGRAM,
+            C.USERNAME,
+            C.COMMAND,
+            C.MACHINE,
+            C.LOCKWAIT,
+            'ALTER SYSTEM KILL SESSION ''' || B.SESSION_ID || ',' || C.SERIAL# || ''';' KILL_SQL
+FROM ALL_OBJECTS A,V$LOCKED_OBJECT B,V$SESSION C
+WHERE A.OBJECT_ID = B.OBJECT_ID
+   AND B.SESSION_ID = C.SID
+   AND A.OBJECT_NAME = '';--表名
+```
+
+### 8.3. Oracle误删除表从回收站恢复
+
+```sql
+select object_name, original_name, partition_name, type, ts_name, createtime,droptime
+from recyclebin; 
+
+flashback table TRANS_DM_ZSXM to before drop ; 
 ```
 
