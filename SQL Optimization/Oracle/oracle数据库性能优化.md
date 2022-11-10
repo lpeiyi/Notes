@@ -650,10 +650,20 @@ Outer Join，查询结果除了**返回那些完全满足连接条件的记录**
 
 如果两个表T1和T2做哈希连接连接的具体的执行**步骤**为：
 
-1. **确定HashPartition的数量**：首先Oracle会根据参数**HASH_AREA_SIZE、DB_BLOCK_SIZE**和**_HASH_MULTIBLOCK_IO_COUNT**的值来决定HashPartition的数量（Hash Partition 是一个逻辑上的概念，所有Hash Partition的集合就被称之为Hash Table，即一个Hash Table是由多个Hash Partition所组成，而一个 Hash Partition又是由多个Hash Bucket所组成）；
-2. **确定驱动结果集**：表T1和T2在施加了目标SQL中指定的谓词条件（如果有的话）后得到的结果集中数据量较小的那个结果集会被Oracle选为哈希连接的驱动结果集，这里我们假设**T1所对应的结果集的数据量相对较小，我们记为S**；T2所对应的结果集的数据量相对较大，我们记为B；显然 这里**S是驱动结果集**，B是被驱动结果集；
-3. **计算哈希值**：接着Oracle会遍历S，读取S中的每一条记录，并对S中的每一条记录按照该记录在表T1中的连接列做哈希运算，这个哈希运算会使用 **两个内置哈希函数**，这两个哈希函数会同时对该连接列计算哈希值，我们把这两个内置哈希函数分别记为hash_func_1和hash_func_2， 它们所计算出来的哈希值分别记为hash_value_1和hash_value_2；
-4. 
+1. **确定Hash Partition的数量**：首先Oracle会根据参数**HASH_AREA_SIZE、DB_BLOCK_SIZE**和**_HASH_MULTIBLOCK_IO_COUNT**的值来决定Hash Partition的数量（Hash Partition 是一个逻辑上的概念，所有Hash Partition的集合就被称之为Hash Table，即一个Hash Table是由多个Hash Partition所组成，而一个 Hash Partition又是由多个Hash Bucket所组成）。
+2. **确定驱动结果集**：表T1和T2在施加了目标SQL中指定的谓词条件（如果有的话）后得到的结果集中数据量较小的那个结果集会被Oracle选为哈希连接的驱动结果集，这里我们假设**T1所对应的结果集的数据量相对较小，我们记为S**；T2所对应的结果集的数据量相对较大，我们记为B；显然 这里**S是驱动结果集**，B是被驱动结果集。
+3. **计算哈希值**：接着Oracle会遍历S，读取S中的每一条记录，并对S中的每一条记录按照该记录在表T1中的**连接列**做哈希运算，这个哈希运算会使用 **两个内置哈希函数**，这两个哈希函数会同时对该连接列计算哈希值，我们把这两个内置哈希函数分别记为hash_func_1和hash_func_2， 它们所计算出来的哈希值分别记为hash_value_1和hash_value_2。
+4. **分组**：然后Oracle会按照hash_value_1的值把相应的S中的对应记录存储在不同Hash Partition的不同Hash Bucket里，同时和该记录存储在 一起的还有该记录用hash_func_2计算出来的hash_value_2的值。**注意，存储在Hash Bucket里的记录并不是目标表的完整行记录，而是只需要存储位于目标SQL中的跟目标表相关的查询列和连接列就足够了**。我们把S所对应的每一个Hash Partition记为Si。
+4. **构建位图**：在构建Si的同时，Oracle会构建一个位图（BITMAP），**这个位图用来标记Si所包含的每一个Hash Bucket是否有记录（即记录数是否大于0）**。
+4. **构建Hash Table过程**：如果S的数据量很大，那么在构建S所对应的Hash Table时，就可能会出现PGA（Program Global Area）程序全局区的工作区（WORK AREA）被填满的情况，这时候Oracle会 把工作区中现有的Hash Partition中包含记录数最多的Hash Partition写到磁盘上（TEMP表空间），接着Oracle会继续构建S所对应的 Hash Table，在继续构建的过程中，如果工作区又满了，则Oracle会继续重复上述挑选包含记录数最多的Hash Partition并写回到磁盘 上的动作；如果要构建的记录所对应的Hash Partition已经事先被Oracle写回到了磁盘上，则此时Oracle就会去磁盘上更新该Hash Partition， 即会把该条记录和hash_value_2直接加到这个已经位于磁盘上的Hash Partition的相应Hash Bucket中；注意，**极端情况下可能会出现只有某个Hash Partition的部分记录还在内存中，该Hash Partition的剩余部分和余下的所有Hash Partition都已经被写回到磁盘上**。
+4. 上述构建S所对应的Hash Table的过程会一直持续下去，直到遍历完S中的所有记录为止。
+4. **排序**：接着，Oracle会对所有的Si按照它们所包含的记录数来排序，然后Oracle会把这些已经排好序的Hash Partition按顺序依次、并且尽 可能的全部放到内存中（PGA的工作区），当然，如果实在放不下的话，放不下的那部分Hash Partition还是会位于磁盘上。我认为这个 按照Si的记录数来排序的动作不是必须要做的，因为这个排序动作的根本目的就是为了尽可能多的把那些记录数较小的Hash Partition 保留在内存中，而将那些已经被写回到磁盘上、记录数较大且现有内存已经放不下的Hash Partition保留在磁盘上，显然，**如果所有的 Si本来就都在内存中，也没发生过将Si写回到磁盘的操作，那这里根本就不需要排序了**。
+9. 至此Oracle已经处理完S，现在可以来开始处理B了。
+10. Oracle会遍历B，读取B中的每一条记录，并对B中的每一条记录按照该记录在表T2中的连接列做哈希运算，这个哈希运算和步骤3中的 哈希运算是一模一样的，即这个哈希运算还是会用步骤3中的hash_func_1和hash_func_2，并且也会计算出两个哈希值hash_value_1和hash_value_2。
+    接着Oracle会按照该记录所对应的哈希值hash_value_1去Si里找匹配的Hash Bucket；如果能找到匹配的Hash Bucket，则Oracle还会遍历该 Hash Bucket中的每一条记录，并会校验存储于该Hash Bucket中的每一条记录的连接列，看是否是真的匹配（**即这里要校验S和B中的匹配记 录所对应的连接列是否真的相等，因为对于Hash运算而言，不同的值经过哈希运算后的结果可能是一样的**），如果是真的匹配，则上述 hash_value_1所对应B中的记录的位于目标SQL中的查询列和该Hash Bucket中的匹配记录便会组合起来，一起作为满足目标SQL连接条件的记录返回。如果找不到匹配的Hash Bucket，则Oracle就会去访问步骤5中构建的位图。
+    如果位图显示该Hash Bucket在Si中对应的记录数大于0， 则说明该Hash Bucket虽然不在内存中，但它已经被写回到了磁盘上，则此时Oracle就会按照上述hash_value_1的值把相应B中的对应记录也 以Hash Partition的方式写回到磁盘上，同时和该记录存储在一起的还有该记录用hash_func_2计算出来的hash_value_2的值。如果位图显示 该Hash Bucket在Si中对应的记录数等于0，则Oracle就不用把上述hash_value_1所对应B中的记录写回到磁盘上了，因为这条记录必然不满足 目标SQL的连接条件。**这个根据位图来决定是否将上述hash_value_1所对应B中的记录写回到磁盘的动作就是所谓的“位图过滤”。我们把B所对 应的每一个Hash Partition记为Bj。**
+11. 上述去Si中查找匹配Hash Bucket和构建Bj的过程会一直持续下去，直到遍历完B中的所有记录为止。
+12. 至此Oracle已经处理完所有位于内存中的Si和对应的Bj，现在只剩下位于磁盘上的Si和Bj还未处理。
 
 ###### 3.3.3.3.2.4 Cross Join
 
