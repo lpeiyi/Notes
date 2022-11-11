@@ -653,7 +653,7 @@ Outer Join，查询结果除了**返回那些完全满足连接条件的记录**
 1. **确定Hash Partition的数量**：首先Oracle会根据参数**HASH_AREA_SIZE、DB_BLOCK_SIZE**和**_HASH_MULTIBLOCK_IO_COUNT**的值来决定Hash Partition的数量（Hash Partition 是一个逻辑上的概念，所有Hash Partition的集合就被称之为Hash Table，即一个Hash Table是由多个Hash Partition所组成，而一个 Hash Partition又是由多个Hash Bucket所组成）。
 2. **确定驱动结果集**：表T1和T2在施加了目标SQL中指定的谓词条件（如果有的话）后得到的结果集中数据量较小的那个结果集会被Oracle选为哈希连接的驱动结果集，这里我们假设**T1所对应的结果集的数据量相对较小，我们记为S**；T2所对应的结果集的数据量相对较大，我们记为B；显然 这里**S是驱动结果集**，B是被驱动结果集。
 3. **计算哈希值**：接着Oracle会遍历S，读取S中的每一条记录，并对S中的每一条记录按照该记录在表T1中的**连接列**做哈希运算，这个哈希运算会使用 **两个内置哈希函数**，这两个哈希函数会同时对该连接列计算哈希值，我们把这两个内置哈希函数分别记为hash_func_1和hash_func_2， 它们所计算出来的哈希值分别记为hash_value_1和hash_value_2。
-4. **分组**：然后Oracle会按照hash_value_1的值把相应的S中的对应记录存储在不同Hash Partition的不同Hash Bucket里，同时和该记录存储在 一起的还有该记录用hash_func_2计算出来的hash_value_2的值。**注意，存储在Hash Bucket里的记录并不是目标表的完整行记录，而是只需要存储位于目标SQL中的跟目标表相关的查询列和连接列就足够了**。我们把S所对应的每一个Hash Partition记为Si。
+4. **分组**：然后Oracle会按照hash_value_1的值把相应的S中的对应记录存储在不同Hash Partition的不同Hash Bucket里，同时和该记录存储在 一起的还有该记录用hash_func_2计算出来的hash_value_2的值。**注意，存储在Hash Bucket里的记录并不是目标表的完整行记录，而是只需要存储位于目标SQL中的跟目标表相关的查询列和连接列就足够了**。**我们把S所对应的每一个Hash Partition记为Si**。
 4. **构建位图**：在构建Si的同时，Oracle会构建一个位图（BITMAP），**这个位图用来标记Si所包含的每一个Hash Bucket是否有记录（即记录数是否大于0）**。
 4. **构建Hash Table过程**：如果S的数据量很大，那么在构建S所对应的Hash Table时，就可能会出现PGA（Program Global Area）程序全局区的工作区（WORK AREA）被填满的情况，这时候Oracle会 把工作区中现有的Hash Partition中包含记录数最多的Hash Partition写到磁盘上（TEMP表空间），接着Oracle会继续构建S所对应的 Hash Table，在继续构建的过程中，如果工作区又满了，则Oracle会继续重复上述挑选包含记录数最多的Hash Partition并写回到磁盘 上的动作；如果要构建的记录所对应的Hash Partition已经事先被Oracle写回到了磁盘上，则此时Oracle就会去磁盘上更新该Hash Partition， 即会把该条记录和hash_value_2直接加到这个已经位于磁盘上的Hash Partition的相应Hash Bucket中；注意，**极端情况下可能会出现只有某个Hash Partition的部分记录还在内存中，该Hash Partition的剩余部分和余下的所有Hash Partition都已经被写回到磁盘上**。
 4. 上述构建S所对应的Hash Table的过程会一直持续下去，直到遍历完S中的所有记录为止。
@@ -661,11 +661,29 @@ Outer Join，查询结果除了**返回那些完全满足连接条件的记录**
 9. 至此Oracle已经处理完S，现在可以来开始处理B了。
 10. Oracle会遍历B，读取B中的每一条记录，并对B中的每一条记录按照该记录在表T2中的连接列做哈希运算，这个哈希运算和步骤3中的 哈希运算是一模一样的，即这个哈希运算还是会用步骤3中的hash_func_1和hash_func_2，并且也会计算出两个哈希值hash_value_1和hash_value_2。
     接着Oracle会按照该记录所对应的哈希值hash_value_1去Si里找匹配的Hash Bucket；如果能找到匹配的Hash Bucket，则Oracle还会遍历该 Hash Bucket中的每一条记录，并会校验存储于该Hash Bucket中的每一条记录的连接列，看是否是真的匹配（**即这里要校验S和B中的匹配记 录所对应的连接列是否真的相等，因为对于Hash运算而言，不同的值经过哈希运算后的结果可能是一样的**），如果是真的匹配，则上述 hash_value_1所对应B中的记录的位于目标SQL中的查询列和该Hash Bucket中的匹配记录便会组合起来，一起作为满足目标SQL连接条件的记录返回。如果找不到匹配的Hash Bucket，则Oracle就会去访问步骤5中构建的位图。
-    如果位图显示该Hash Bucket在Si中对应的记录数大于0， 则说明该Hash Bucket虽然不在内存中，但它已经被写回到了磁盘上，则此时Oracle就会按照上述hash_value_1的值把相应B中的对应记录也 以Hash Partition的方式写回到磁盘上，同时和该记录存储在一起的还有该记录用hash_func_2计算出来的hash_value_2的值。如果位图显示 该Hash Bucket在Si中对应的记录数等于0，则Oracle就不用把上述hash_value_1所对应B中的记录写回到磁盘上了，因为这条记录必然不满足 目标SQL的连接条件。**这个根据位图来决定是否将上述hash_value_1所对应B中的记录写回到磁盘的动作就是所谓的“位图过滤”。我们把B所对 应的每一个Hash Partition记为Bj。**
+    如果位图显示该Hash Bucket在Si中对应的记录数大于0， 则说明该Hash Bucket虽然不在内存中，但它已经被写回到了磁盘上，则此时Oracle就会按照上述hash_value_1的值把相应B中的对应记录也 以Hash Partition的方式写回到磁盘上，同时和该记录存储在一起的还有该记录用hash_func_2计算出来的hash_value_2的值。如果位图显示 该Hash Bucket在Si中对应的记录数等于0，则Oracle就不用把上述hash_value_1所对应B中的记录写回到磁盘上了，因为这条记录必然不满足 目标SQL的连接条件。**这个根据位图来决定是否将上述hash_value_1所对应B中的记录写回到磁盘的动作就是所谓的“位图过滤”。我们把B所对应的每一个Hash Partition记为Bj。**
 11. 上述去Si中查找匹配Hash Bucket和构建Bj的过程会一直持续下去，直到遍历完B中的所有记录为止。
 12. 至此Oracle已经处理完所有位于内存中的Si和对应的Bj，现在只剩下位于磁盘上的Si和Bj还未处理。
+12. 因为在构建Si和Bj时用的是同样的哈希函数hash_func_1和hash_func_2，所以Oracle在处理位于磁盘上的Si和Bj的时候可以放心的配对处 理，即只有对应Hash Partition Number值相同的Si和Bj才可能会产生满足连接条件的记录。**这里我们用Sn和Bn来表示位于磁盘上且对应 Hash Partition Number值相同的Si和Bj**。
+12. 对于每一对儿Sn和Bn，它们之中记录数较少的会被当作驱动结果集，然后Oracle会用这个驱动结果集的Hash Bucket里记录的hash_value_2 来构建新的Hash Table，另外一个记录数较大的会被当作被驱动结果集，然后Oracle会用这个被驱动结果集的Hash Bucket里记录的hash_value_2 去上述构建的新Hash Table中找匹配记录。注意，**对每一对儿Sn和Bn而言，Oracle始终会选择它们中记录数较少的来作为驱动结果集，所以每 一对儿Sn和Bn的驱动结果集都可能会发生变化，这就是所谓的“动态角色互换”**。
+12. 步骤14中如果存在匹配记录，则该匹配记录也会作为满足目标SQL连接条件的记录返回。
+12. 上述处理Sn和Bn的过程会一直持续下去，直到遍历完所有的Sn和Bn为止。
+
+**对于哈希连接的优缺点及适用场景，有如下总结**：
+
+- 哈希连接不一定会排序，或者说大多数情况下都不需要排序。
+- 哈希连接的驱动表所对应的连接列的可选择性应尽可能的好，因为这个可选择性会影响对应Hash Bucket中的记录数，而Hash Bucket中的记录数又会直接影响从该Hash Bucket中查找匹配记录的效率。**如果一个Hash Bucket里所包含的记录数过多，则可能会严重降低所对应哈希连接的执行效率，此时典型的表现就是该哈希连接执行了很长时间都没有结束，数据库所在database server上的CPU占用率很高，但目标SQL所消耗的逻辑读却很低，因为此时大部分时间都耗费在了遍历上述Hash Bucket里的所有记录上，而遍历Hash Bucket里记录这个动作是发生在PGA的工作区里，所以不耗费逻辑读**。
+- **哈希连接只适用于CBO、它也只能用于等值连接条件（即使是哈希反连接，Oracle实际上也是将其转换成了等价的等值连接）**。
+- **哈希连接很适合于一个小表（结果集）和大表之间的表连接，特别是在小表的连接列的可选择性非常好的情况下，这时候哈希连接的执行时间就可以近似看作是和全表扫描那个大表所耗费的时间相当**。
+- 当两个表做哈希连接时，如果这两个表在施加了目标SQL中指定的谓词条件（如果有的话）后得到的结果集中数据量较小的那个结果集所对应的Hash Table能够完全被容纳在内存中时（PGA的工作区），则此时的哈希连接的执行效率会非常高。
 
 ###### 3.3.3.3.2.4 Cross Join
+
+笛卡尔连接，又称为笛卡尔乘积，它是一种两个表在做表连接时没有任何连接条件的表连接方法。
+
+如果两个表T1和T2做笛卡尔连接的具体的执行**步骤**为：
+
+1. 
 
 # 四、执行计划
 
