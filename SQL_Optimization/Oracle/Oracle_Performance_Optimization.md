@@ -3,7 +3,7 @@
 
 > **在线笔记地址：**
 >
-> [oracle数据库性能优化.md](https://github.com/lpeiyi/Notes/blob/hot-fix/SQL Optimization/Oracle/oracle数据库性能优化.md)
+> [oracle数据库性能优化.md](https://github.com/lpeiyi/Notes/blob/hot-fix/SQL_Optimization/Oracle/Oracle_Performance_Optimization.md)
 
 ***
 
