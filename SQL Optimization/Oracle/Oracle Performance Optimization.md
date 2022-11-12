@@ -1,10 +1,11 @@
----
+***
+
 
 > **在线笔记地址：**
 >
 > [oracle数据库性能优化.md](https://github.com/lpeiyi/Notes/blob/hot-fix/SQL Optimization/Oracle/oracle数据库性能优化.md)
 
----
+***
 
 # 一、性能优化综述
 
@@ -226,7 +227,7 @@ latch有40余种，但作为DBA关心的主要应有以下几种：
 
 ### 2.4.3 Latch 的机制
 
-![image-20221027153327196](oracle数据库性能优化.assets/image-20221027153327196.png)
+![image-20221027153327196](Oracle Performance Optimization.assets/image-20221027153327196.png)
 
 ### 2.4.4 Latch的获取
 
@@ -263,7 +264,7 @@ Latch导致的性能问题，通常是一个系统层面的问题：
 
 oracle数据库里SQL语句的执行过程可以用下`图1-1`来表示：
 
-![image-20221031190944971](oracle数据库性能优化.assets/image-20221031190944971.png)
+![image-20221031190944971](Oracle Performance Optimization.assets/image-20221031190944971.png)
 
 **注意**：优化器的输入是经过解析后（检查目标SQL的语法、语义和权限）的目标SQL，输出是目标SQL的执行计划。
 
@@ -315,7 +316,7 @@ Cardinality和成本值的估算是息息相关的，因为Oracle得到指定结
 
 **可选择率**，是CBO特有的概念，是指世家特定谓词条件后返回结果集的记录数占未施加任何谓词条件的原始结果集的记录数的比率。用公式表示为：
 
-![image-20221101104758856](oracle数据库性能优化.assets/image-20221101104758856.png)
+![image-20221101104758856](Oracle Performance Optimization.assets/image-20221101104758856.png)
 
 Selectivity的值在0~1之间，**值越小，可选择性越高**，即当值为1时选择性是最差的。
 
@@ -443,7 +444,7 @@ SQL> select * from emp where rowid = 'AAAFCOAABAAALDxAAA';
 
 B树索引是oracle中最常用的索引。B树索引结构主要由三部分组成根节点、分支节点、叶子节点。 B树索引就是 一颗二叉树；叶子节点（双向链表）包含索引列和指向表中每个匹配行的rowid值。所有叶子节点具有相同的深度，因而不管查询条件怎样，查询速度基本相同。B树索引结构能够适应精确查询（=）、模糊查询（like）和比较查询（>）。
 
-![image-20221104162302627](oracle数据库性能优化.assets/image-20221104162302627.png)
+![image-20221104162302627](Oracle Performance Optimization.assets/image-20221104162302627.png)
 
 B树索引包含两种类型的数据块，一是索引分支块，而是索引叶子块。在Oracle里访问B树索引必须从根节点开始，到分支快，再到叶子块。
 
@@ -536,7 +537,7 @@ COL2 VARCHAR2(10) Y
 
 Inner Join，**查询结果只返回那些完全满足连接条件的记**录。
 
-![image-20221107163120176](oracle数据库性能优化.assets/image-20221107163120176.png)
+![image-20221107163120176](Oracle Performance Optimization.assets/image-20221107163120176.png)
 
 ```sql
 SQL> SELECT t.*,t2.* from t left join t2 on t.col1 = t2.col1;
@@ -810,8 +811,6 @@ Plan hash value: 1323614827
 ```sql
 
 ```
-
-
 
 # 七、Hint
 
