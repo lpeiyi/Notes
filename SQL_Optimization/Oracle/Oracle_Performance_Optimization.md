@@ -879,15 +879,21 @@ Plan hash value: 1713220790
 
 # 六、统计信息
 
+查看上一次收集统计信息的时间
+
+```sql
+select table_name,num_rows,blocks,to_char(last_analyzed,'yyyymmdd hh:mi:ss') last_time from dba_tables where table_name = 'T3';
+```
+
 收集统计信息
 
 ```sql
 BEGIN
     DBMS_STATS.GATHER_TABLE_STATS(ownname => 'TEST', --用户名
-                                  tabname => 'T2', --表名
-                                  estimate_percent => 100,--采样百分比，数据量百万万以下建议100，千万以下建议5，千万以上建议1或0.1
+                                  tabname => 'T3', --表名
+                         estimate_percent => 100,--采样百分比，数据量百万万以下建议100，千万以下建议5，千万以上建议1或0.1
                                   no_invalidate => FALSE,
-                                  degree => 8,--并行度
+                                  degree => 4,--并行度
                                   granularity => 'ALL',--分区表收集粒度，如果时分区表也收集分区级统计信息
                                   cascade => TRUE --收集索引的信息，默认为FALSE
                                   );
@@ -895,8 +901,10 @@ END;
 /
 ```
 
-```sql
+或（命令行中执行）
 
+```sql
+exec DBMS_STATS.GATHER_TABLE_STATS(ownname => 'TEST',tabname => 'T3',cascade => TRUE,no_invalidate => FALSE,degree => 4);
 ```
 
 
