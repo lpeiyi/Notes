@@ -873,7 +873,113 @@ Plan hash value: 1713220790
 
 # 四、执行计划
 
+## 4.1 什么是执行计划
 
+执行计划是一条查询语句在Oracle中的执行过程或访问路径的描述，是执行目标SQL语句步骤的组合。
+
+我们来看一个Oracle数据库中一个执行计划的实例：
+
+```
+SQL> select t1.id,t1.col,t2.col from t1,t2 where t1.id = t2.id;
+        ID COL  COL
+--------- ---- ----
+         1 a    a
+         2 b    b
+         3 c    c
+         4 d    d
+         
+SQL> select * from table(dbms_xplan.display_cursor(null,null,'advanced'));
+SQL_ID  0haat1w89ws0k, child number 0
+-------------------------------------
+select t1.id,t1.col,t2.col from t1,t2 where t1.id = t2.id
+Plan hash value: 2959412835
+---------------------------------------------------------------------------
+| Id  | Operation          | Name | Rows  | Bytes | Cost (%CPU)| Time     |
+---------------------------------------------------------------------------
+|   0 | SELECT STATEMENT   |      |       |       |     5 (100)|          |
+|*  1 |  HASH JOIN         |      |     5 |    50 |     5  (20)| 00:00:01 |
+|   2 |   TABLE ACCESS FULL| T2   |     5 |    25 |     2   (0)| 00:00:01 |
+|   3 |   TABLE ACCESS FULL| T1   |     6 |    30 |     2   (0)| 00:00:01 |
+---------------------------------------------------------------------------
+Query Block Name / Object Alias (identified by operation id):
+-------------------------------------------------------------
+   1 - SEL$1
+   2 - SEL$1 / T2@SEL$1
+   3 - SEL$1 / T1@SEL$1
+Outline Data
+-------------
+  /*+
+      BEGIN_OUTLINE_DATA
+      IGNORE_OPTIM_EMBEDDED_HINTS
+      OPTIMIZER_FEATURES_ENABLE('11.2.0.2')
+      DB_VERSION('11.2.0.2')
+      ALL_ROWS
+      OUTLINE_LEAF(@"SEL$1")
+      FULL(@"SEL$1" "T2"@"SEL$1")
+      FULL(@"SEL$1" "T1"@"SEL$1")
+      LEADING(@"SEL$1" "T2"@"SEL$1" "T1"@"SEL$1")
+      USE_HASH(@"SEL$1" "T1"@"SEL$1")
+      END_OUTLINE_DATA
+  */
+Predicate Information (identified by operation id):
+---------------------------------------------------
+   1 - access("T1"."ID"="T2"."ID")
+Column Projection Information (identified by operation id):
+-----------------------------------------------------------
+   1 - (#keys=1) "T1"."ID"[NUMBER,22], "T2"."COL"[VARCHAR2,2],
+       "T1"."COL"[VARCHAR2,2]
+   2 - "T2"."ID"[NUMBER,22], "T2"."COL"[VARCHAR2,2]
+   3 - "T1"."ID"[NUMBER,22], "T1"."COL"[VARCHAR2,2]
+已选择52行。
+```
+
+上述执行计划是在执行目标SQL（select t1.id,t1.col,t2.col from t1,t2 where t1.id = t2.id）后使用dbms_xplan包中的方法display_cursor得到的真实执行计划。
+
+这个执行计划可以分为两个部分：
+
+1. **目标SQL的正文、SQL_ID和Plan hash value**
+
+   ![image-20221114164839457](Oracle_Performance_Optimization.assets/image-20221114164839457.png)
+
+   SQL的正文为select t1.id,t1.col,t2.col from t1,t2 where t1.id = t2.id，SQL_ID为0haat1w89ws0k，Plan hash value为2959412835。
+
+2. **执行计划的主体**
+
+   ![image-20221114170009054](Oracle_Performance_Optimization.assets/image-20221114170009054.png)
+
+   ![image-20221114170314411](Oracle_Performance_Optimization.assets/image-20221114170314411.png)
+
+   此部分可以看到在执行目标SQL时的具体步骤，包含执行步骤顺序、步骤对应的名称(对象)、ROWS(Cardinality)、Bytes、Cost(成本)、Time(执行时间)。
+
+   我们可以看到Oracle在执行目标SQL时使用了对T1和T2做哈希连接，T1、T2分别做全表扫描，哈希连接返回结果集的Cardinality是5，成本值为5。Id=1的步骤”HASH JOIN“前面的`*`号表示该执行步骤有对应的驱动或过滤查询条件，对应下面的`1 - access("T1"."ID"="T2"."ID")`
+
+## 4.2 查看执行计划
+
+查看执行计划的方式很多种，通常利用以下几种获取到执行计划：
+
+1. **EXPLAIN PLAN 命令**
+2. **DBMS_XPLAN 包**
+3. **SQLPLUS中的AUTOTRACE开关**
+4. **10046 事件**
+5. 10053 事件
+6. AWR报告或Statspack报告
+7. 一些现成的脚本（如display_cursor_9i.sql）
+
+### 4.2.1 EXPLAIN PLAN 命令
+
+
+
+### 4.2.2 DBMS_XPLAN 包
+
+### 4.2.3 SQLPLUS中的 AUTOTRACE 开关
+
+### 4.2.4 10046 事件
+
+## 4.3 真实的执行计划
+
+## 4.4 执行计划的执行顺序
+
+## 4.5 常见的执行计划
 
 # 五、查询转换
 
@@ -891,7 +997,7 @@ select table_name,num_rows,blocks,to_char(last_analyzed,'yyyymmdd hh:mi:ss') las
 BEGIN
     DBMS_STATS.GATHER_TABLE_STATS(ownname => 'TEST', --用户名
                                   tabname => 'T3', --表名
-                         estimate_percent => 100,--采样百分比，数据量百万万以下建议100，千万以下建议5，千万以上建议1或0.1
+                       estimate_percent => 100,--采样百分比，数据量百万万以下建议100，千万以下建议5，千万以上建议1或0.1
                                   no_invalidate => FALSE,
                                   degree => 4,--并行度
                                   granularity => 'ALL',--分区表收集粒度，如果时分区表也收集分区级统计信息
