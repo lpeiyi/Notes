@@ -967,13 +967,275 @@ Column Projection Information (identified by operation id):
 
 ### 4.2.1 EXPLAIN PLAN 命令
 
+我们在PL/SQL Developer 常用的快捷键F5，就是调用了EXPLAIN PLAN 命令，实际上，EXPLAIN PLAN 命令的语法是依次执行如下两条命令：
 
+```sql
+EXPLAIN PLAN FOR + 目标SQL
+SELECT * FROM TABLE(DBMS_XPLAN.DISPLAY)
+```
+
+示例：
+
+```sql
+SQL> EXPLAIN PLAN FOR SELECT T1.ID,T1.COL,T2.COL FROM T1,T2 WHERE T1.ID = T2.ID;
+已解释。
+SQL> SELECT * FROM TABLE(DBMS_XPLAN.DISPLAY);
+Plan hash value: 2959412835
+---------------------------------------------------------------------------
+| Id  | Operation          | Name | Rows  | Bytes | Cost (%CPU)| Time     |
+---------------------------------------------------------------------------
+|   0 | SELECT STATEMENT   |      |     5 |    50 |     5  (20)| 00:00:01 |
+|*  1 |  HASH JOIN         |      |     5 |    50 |     5  (20)| 00:00:01 |
+|   2 |   TABLE ACCESS FULL| T2   |     5 |    25 |     2   (0)| 00:00:01 |
+|   3 |   TABLE ACCESS FULL| T1   |     6 |    30 |     2   (0)| 00:00:01 |
+---------------------------------------------------------------------------
+Predicate Information (identified by operation id):
+---------------------------------------------------
+   1 - access("T1"."ID"="T2"."ID")
+已选择15行。
+```
+
+原理是，当我们对目标SQL执行EXPLAIN PLAN 命令后，Oracle就将解析目标SQL所产生的执行计划的执行步骤都写入`sys.plan_table$`表中，随后执行的`SELECT * FROM TABLE(DBMS_XPLAN.DISPLAY)`是把表sys.plan_table$中的这些步骤格式化后显示出来。
 
 ### 4.2.2 DBMS_XPLAN 包
 
+DBMS_XPLAN 包针对不同情况有四种不同获取执行计划的方法：
+
+```sql
+1.select * from table(dbms_xplan.display);
+2.select * from table(dbms_xplan.display_cursor(null,null,'advanced'));
+3.select * from table(dbms_xplan.display_cursor('sql_id/hash_value',child_cursor_number,'advanced'));
+4.select * from table(dbms_xplan.display_awr('sql_id'));
+```
+
+1. 方法1`select * from table(dbmx_xplan.display)`，需要与explain plan命令配合使用，也是PL/SQL Developer中的快捷键F5.
+
+2. 方法2`select * from table(dbmx_xplan.display_cursor(null,null,'advanced'))`，用于查看刚刚执行过的SQL的执行计划。前两个参数都是null，第三个参数值是”advanced“，也可以是”all“，但是”advanced“比较详细。
+
+   ```sql
+   SQL> select t1.id,t1.col,t2.col from t1,t2 where t1.id = t2.id;
+           ID COL  COL
+   ---------- ---- ----
+            1 a    a
+            2 b    b
+            3 c    c
+            4 d    d
+   SQL> select * from table(dbms_xplan.display_cursor(null,null,'advanced'));
+   SQL_ID  0haat1w89ws0k, child number 0
+   -------------------------------------
+   select t1.id,t1.col,t2.col from t1,t2 where t1.id = t2.id
+   Plan hash value: 2959412835
+   ---------------------------------------------------------------------------
+   | Id  | Operation          | Name | Rows  | Bytes | Cost (%CPU)| Time     |
+   ---------------------------------------------------------------------------
+   |   0 | SELECT STATEMENT   |      |       |       |     5 (100)|          |
+   |*  1 |  HASH JOIN         |      |     5 |    50 |     5  (20)| 00:00:01 |
+   |   2 |   TABLE ACCESS FULL| T2   |     5 |    25 |     2   (0)| 00:00:01 |
+   |   3 |   TABLE ACCESS FULL| T1   |     6 |    30 |     2   (0)| 00:00:01 |
+   ---------------------------------------------------------------------------
+   Query Block Name / Object Alias (identified by operation id):
+   -------------------------------------------------------------
+      1 - SEL$1
+      2 - SEL$1 / T2@SEL$1
+      3 - SEL$1 / T1@SEL$1
+   Outline Data
+   -------------
+     /*+
+         BEGIN_OUTLINE_DATA
+         IGNORE_OPTIM_EMBEDDED_HINTS
+         OPTIMIZER_FEATURES_ENABLE('11.2.0.2')
+         DB_VERSION('11.2.0.2')
+         ALL_ROWS
+         OUTLINE_LEAF(@"SEL$1")
+         FULL(@"SEL$1" "T2"@"SEL$1")
+         FULL(@"SEL$1" "T1"@"SEL$1")
+         LEADING(@"SEL$1" "T2"@"SEL$1" "T1"@"SEL$1")
+         USE_HASH(@"SEL$1" "T1"@"SEL$1")
+         END_OUTLINE_DATA
+     */
+   Predicate Information (identified by operation id):
+   ---------------------------------------------------
+      1 - access("T1"."ID"="T2"."ID")
+   Column Projection Information (identified by operation id):
+   -----------------------------------------------------------
+      1 - (#keys=1) "T1"."ID"[NUMBER,22], "T2"."COL"[VARCHAR2,2],
+          "T1"."COL"[VARCHAR2,2]
+      2 - "T2"."ID"[NUMBER,22], "T2"."COL"[VARCHAR2,2]
+      3 - "T1"."ID"[NUMBER,22], "T1"."COL"[VARCHAR2,2]
+   已选择52行。
+   ```
+
+3. 方法3`select * from table(dbms_xplan.display_cursor('sql_id/hash_value',child_cursor_number,'advanced'))`,用于查看指定SQL的执行计划。需要输入指定的sql_id和child_cursor_number，可通过视图v$sql来查看。
+
+   示例：
+
+   ```sql
+   SQL> select sql_text,sql_id,hash_value,child_number from v$sql where sql_text like 'select t1.id,t1.col,t2.col%';
+   SQL_TEXT						SQL_ID   HASH_VALUE  CHILD_NUMBER
+   ----------------------------   --------  ----------  ------------
+   select t1.id,t1.col,t2.col from t1,t2 where t1.id = t2.id  0haat1w89ws0k  278814738  0
+   
+   SQL> select * from table(dbms_xplan.display_cursor('0haat1w89ws0k',0,'advanced'));
+   SQL_ID  0haat1w89ws0k, child number 0
+   -------------------------------------
+   select t1.id,t1.col,t2.col from t1,t2 where t1.id = t2.id
+   Plan hash value: 2959412835
+   ---------------------------------------------------------------------------
+   | Id  | Operation          | Name | Rows  | Bytes | Cost (%CPU)| Time     |
+   ---------------------------------------------------------------------------
+   |   0 | SELECT STATEMENT   |      |       |       |     5 (100)|          |
+   |*  1 |  HASH JOIN         |      |     5 |    50 |     5  (20)| 00:00:01 |
+   |   2 |   TABLE ACCESS FULL| T2   |     5 |    25 |     2   (0)| 00:00:01 |
+   |   3 |   TABLE ACCESS FULL| T1   |     6 |    30 |     2   (0)| 00:00:01 |
+   ---------------------------------------------------------------------------
+   Query Block Name / Object Alias (identified by operation id):
+   -------------------------------------------------------------
+      1 - SEL$1
+      2 - SEL$1 / T2@SEL$1
+      3 - SEL$1 / T1@SEL$1
+   Outline Data
+   -------------
+     /*+
+         BEGIN_OUTLINE_DATA
+         IGNORE_OPTIM_EMBEDDED_HINTS
+         OPTIMIZER_FEATURES_ENABLE('11.2.0.2')
+         DB_VERSION('11.2.0.2')
+         ALL_ROWS
+         OUTLINE_LEAF(@"SEL$1")
+         FULL(@"SEL$1" "T2"@"SEL$1")
+         FULL(@"SEL$1" "T1"@"SEL$1")
+         LEADING(@"SEL$1" "T2"@"SEL$1" "T1"@"SEL$1")
+         USE_HASH(@"SEL$1" "T1"@"SEL$1")
+         END_OUTLINE_DATA
+     */
+   Predicate Information (identified by operation id):
+   ---------------------------------------------------
+      1 - access("T1"."ID"="T2"."ID")
+   Column Projection Information (identified by operation id):
+   -----------------------------------------------------------
+      1 - (#keys=1) "T1"."ID"[NUMBER,22], "T2"."COL"[VARCHAR2,2],
+          "T1"."COL"[VARCHAR2,2]
+      2 - "T2"."ID"[NUMBER,22], "T2"."COL"[VARCHAR2,2]
+      3 - "T1"."ID"[NUMBER,22], "T1"."COL"[VARCHAR2,2]
+   已选择52行。
+   ```
+
+4. 方法4`select * from table(dbms_xplan.display_awr('sql_id'))`，用于查询指定sql所有历史的执行计划。
+   方法2，方法3能够查询出执行计划的一个前提条件是该SQL的执行计划还在Shared Pool中。如果该SQL的执行计划已经被age out出Shared Pool，那么只要执行计划被Oracle采集到AWR Repository中，我们就可以用方法4来获取到所有的执行计划。
+
 ### 4.2.3 SQLPLUS中的 AUTOTRACE 开关
 
+在sqlplus中将autotrace开关打开也可以获取到执行计划，并且还能得到sql执行时资源耗费量（物理读，逻辑读，redo数量，排序的数量）。
+
+1. SET AUTOTRACE ON：显示执行结果、执行计划和资源消耗情况。
+
+   ```sql
+   SQL> set autotrace on;
+   SQL> select * from t1;
+           ID COL
+   ---------- ----
+            1 a
+            2 b
+   执行计划
+   ----------------------------------------------------------
+   Plan hash value: 3617692013
+   --------------------------------------------------------------------------
+   | Id  | Operation         | Name | Rows  | Bytes | Cost (%CPU)| Time     |
+   --------------------------------------------------------------------------
+   |   0 | SELECT STATEMENT  |      |     6 |    30 |     2   (0)| 00:00:01 |
+   |   1 |  TABLE ACCESS FULL| T1   |     6 |    30 |     2   (0)| 00:00:01 |
+   --------------------------------------------------------------------------
+   统计信息
+   ----------------------------------------------------------
+             0  recursive calls
+             0  db block gets
+             3  consistent gets
+             0  physical reads
+             0  redo size
+           659  bytes sent via SQL*Net to client
+           523  bytes received via SQL*Net from client
+             2  SQL*Net roundtrips to/from client
+             0  sorts (memory)
+             0  sorts (disk)
+             2  rows processed
+   ```
+
+2. SET AUTOTRACE OFF：关闭。
+
+3. SET AUTOTRACE TRACEONLY：显示执行计划和资源消耗情况，不返回执行结果。
+
+   ```sql
+   SQL> set autotrace traceonly;
+   SQL> select * from t1;
+   执行计划
+   ----------------------------------------------------------
+   Plan hash value: 3617692013
+   --------------------------------------------------------------------------
+   | Id  | Operation         | Name | Rows  | Bytes | Cost (%CPU)| Time     |
+   --------------------------------------------------------------------------
+   |   0 | SELECT STATEMENT  |      |     6 |    30 |     2   (0)| 00:00:01 |
+   |   1 |  TABLE ACCESS FULL| T1   |     6 |    30 |     2   (0)| 00:00:01 |
+   --------------------------------------------------------------------------
+   统计信息
+   ----------------------------------------------------------
+             0  recursive calls
+             0  db block gets
+             3  consistent gets
+             0  physical reads
+             0  redo size
+           659  bytes sent via SQL*Net to client
+           523  bytes received via SQL*Net from client
+             2  SQL*Net roundtrips to/from client
+             0  sorts (memory)
+             0  sorts (disk)
+             2  rows processed
+   ```
+
+4. SET AUTOTRACE TRACEONLY EXPLAIN：只显示执行计划。
+
+   ```sql
+   SQL> set autotrace traceonly explain
+   SQL> select * from t1;
+   执行计划
+   ----------------------------------------------------------
+   Plan hash value: 3617692013
+   --------------------------------------------------------------------------
+   | Id  | Operation         | Name | Rows  | Bytes | Cost (%CPU)| Time     |
+   --------------------------------------------------------------------------
+   |   0 | SELECT STATEMENT  |      |     6 |    30 |     2   (0)| 00:00:01 |
+   |   1 |  TABLE ACCESS FULL| T1   |     6 |    30 |     2   (0)| 00:00:01 |
+   --------------------------------------------------------------------------
+   ```
+
+5. SET AUTOTRACE TRACEONLY STATISTICS：只显示资源消耗量。
+
+   ```sql
+   SQL> set autotrace traceonly statistics;
+   SQL> select * from t1;
+   统计信息
+   ----------------------------------------------------------
+             0  recursive calls
+             0  db block gets
+             3  consistent gets
+             0  physical reads
+             0  redo size
+           659  bytes sent via SQL*Net to client
+           523  bytes received via SQL*Net from client
+             2  SQL*Net roundtrips to/from client
+             0  sorts (memory)
+             0  sorts (disk)
+             2  rows processed
+   ```
+
+设置AUTOTRACE开关的命令简写，如下：
+
+```SQL
+AUTOTRACE --> AUTOT, TRACEONLY --> TRACE, EXPLAIN --> EXP, STATISTICS --> STAT
+```
+
 ### 4.2.4 10046 事件
+
+
 
 ## 4.3 真实的执行计划
 
