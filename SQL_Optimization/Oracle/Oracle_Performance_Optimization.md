@@ -1235,9 +1235,39 @@ AUTOTRACE --> AUTOT, TRACEONLY --> TRACE, EXPLAIN --> EXP, STATISTICS --> STAT
 
 ### 4.2.4 10046 事件
 
+10046事件所得到的执行计划中有明确的目标SQl实际执行计划每一个步骤所消耗的逻辑读、物理读和花费的时间，这对于诊断**复杂SQL**的性能问题十分有效。
+
+使用10046事件的步骤如下：
+
+1. 在当前Session中激活10046事件；
+2. 在当前Session中执行目标SQL；
+3. 在当前Session中关闭10046事件。
+
+当执行完这三个操作后，Oracle就会将SQL的执行计划和明细资源消耗写入当前Session多对应的**trace文件**中，我们要查看这个文件。Oracle会在参数USER_DUMP_DEST所代表的目录下生成这个trace文件，文件命名格式为”实例名_ora_当前Session的spin.trc“，例如：zjswj2js_ora_857431.trc。
+
+**激活10046事件的两种方法为**：
+
+```sql
+-- 方法1
+alter session set events '10046 trace name context forever,level 12';
+alter session set events '10046 trace name context off';
+```
+
+```sql
+-- 方法2（推荐）
+oradebug event 10046 trace name context forever,level 12;
+oradebug event 10046 trace name context off;
+```
+
+上述命令中的关键字“level" 后的数字是表示设置的10046 事件的level 值。这个值是可以修改的，我们通常使用的值为12，表示在产生的trace 文件中除了有目标SQL的执行计划和资源消耗明细之外，还会包含目标SQL所使用的绑定变量的值以及该Session所经历的等待事件。除了上述level值之外，其他的部分都是固定的语法，我们无法修改。
+
+这里推荐使用方法2，因为可以在激活后执行命令`oradebug tracefile_name`来得到trace文件的具体路径和名称。此外，trace文件看起来不那么只管易懂，需要用`tkprof`命令来翻译trace文件。
 
 
-## 4.3 真实的执行计划
+
+oradebug setmypid  --跟踪当前会话
+
+## 4.3 获取真实的执行计划
 
 ## 4.4 执行计划的执行顺序
 
