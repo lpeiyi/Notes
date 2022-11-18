@@ -803,7 +803,7 @@ Plan hash value: 1323614827
 - 有时候出现笛卡儿连接是因为在目标SQL中使用了ORDEREDHint，同时在该SQL的SQL文本中位置相邻的两个表之间又没有直接的关联条件。
 - 有时候出现笛卡儿连接是因为目标SQL中相关表的统计信息不准。比如三个表T1、T2、T3做表连接, T1和T2的连接条件为T1.IDI=T2.IDI，T2和T3的连接条件为T2.ID2=T3.ID2，同时在表T2的连接列ID1和ID2上存在一个包含这两个连接列的组合索引。如果表T1和T3的统计信息不准，导致Oracle认为表T1和T3都只有很少量的记录（比如都只有1条记录），则此时Oracle很可能会选择先对表T1和T3做笛卡儿连接，然后再和表T2做表连接。因为Oracle认为表T1和T3做笛卡儿连接后连接结果集的Cardinality的值是1，并且连接结果中会同时包含列ID1和列ID2,这意味着此时Oracle就可以利用表T2中的上述组合索引了。这种笛卡儿连接通常是有问题的，还是拿这个例子来说，如果表T1和表T3的实际记录数并不都是1，而全部是1000，那么此时表T1和表T3做笛卡儿连接的连接结果集的Cardinality的值就将是100 万，显然这种情况下如果还是按照笛卡儿连接的方式来执行的话，则该SQL的执行效率就会受到严重影响。
 
-##### 3.3.3.3.3 Anti Join
+###### 3.3.3.3.2.5 Anti Join
 
 反连接，是一种特殊的连接类型，与内连接和外连接不同，Oracle数据库里并没有相关的关键字可以在SQL文本中专门表示反链接，所以这里把他单独拿出来说明。
 
@@ -832,7 +832,7 @@ Plan hash value: 3105866143
 
 NOT IN和<> ALL对NULL值敏感，这意味着NOT IN后面的子查询或者常量集合一旦有NULL值出现，则整个SQL的执行结果就会为NULL,即此时的执行结果将不包含任何记录。**NOT EXISTS对NULL值不敏感，这意味着NULL值对NOT EXISTS的执行结果不会有什么影响。**
 
-##### 3.3.3.3.4 Semi Join
+###### 3.3.3.3.2.6 Semi Join
 
 半连接，和反连接一样是一种特殊的连接类型。
 
@@ -861,7 +861,7 @@ Plan hash value: 1713220790
 ---------------------------------------------------------------------------
 ```
 
-##### 3.3.3.3.5 Star Join
+###### 3.3.3.3.2.7 Star Join
 
 星型连接， 通常用于数据仓库类型的应用，它是一种单个事实表（Fact Table）和多个维度表（Dimension Table）之间的连接。从严格意义上来说，星型连接既不是一种额外的连接类型，也不是一种额外的连接方法，只是它有其自身很明显的、有别于其他连接类型的特征，所以这里我们把它单独拿出来说明。
 
@@ -967,7 +967,7 @@ Column Projection Information (identified by operation id):
 
 ### 4.2.1 EXPLAIN PLAN 命令
 
-我们在PL/SQL Developer 常用的快捷键F5，就是调用了EXPLAIN PLAN 命令，实际上，EXPLAIN PLAN 命令的语法是依次执行如下两条命令：
+我们在PL/SQL Developer 常用的快捷键F5，就是调用了EXPLAIN PLAN 命令，此时目标SQL并未真正执行过。实际上，EXPLAIN PLAN 命令的语法是依次执行如下两条命令：
 
 ```sql
 EXPLAIN PLAN FOR + 目标SQL
@@ -1263,11 +1263,37 @@ oradebug event 10046 trace name context off;
 
 这里推荐使用方法2，因为可以在激活后执行命令`oradebug tracefile_name`来得到trace文件的具体路径和名称。此外，trace文件看起来不那么只管易懂，需要用`tkprof`命令来翻译trace文件。
 
-
-
-oradebug setmypid  --跟踪当前会话
-
 ## 4.3 获取真实的执行计划
+
+在4.2节中介绍了四种查看执行计划常用的四种方法
+
+1. EXPLAIN PLAN 命令
+2. DBMS_XPLAN 包
+3. SQLPLUS中的AUTOTRACE开关
+4. 10046 事件
+
+这其中，除了10046事件外，其他三种方法获取的执行计划有可能是不准的。只有目标SQL真正执行过，获取到的执行计划才是准确的。
+
+### 4.3.1 说明
+
+对于第一种方法（EXPLAIN PLAN 命令），因为目标SQL并没有被实际执行，所以得到的执行计划有可能是不准的。
+
+对使用第二种方法（DBMS_XPLAN 包），针对不同场景可选择4中不同的方式：
+
+```sql
+select * from table(dbms_xplan.display);
+select * from table(dbms_xplan.display_cursor(null,null,'advanced'));
+select * from table(dbms_xplan.display_cursor('sql_id/hash_value',child_cursor_number,'advanced'));
+select * from table(dbms_xplan.display_awr('sql_id'));
+```
+
+方式1需要与explain plan配合使用，所以获取到的执行计划是不准的。而方式2、3、4所得到的执行计划都是准的，因为目标SQL都已经被实际执行过。
+
+对使用第三种方法（SQLPLUS中的AUTOTRACE开关），使用set autotrace on和set autotrace traceonly是准的，set autotrace traceonly explain是不准的。
+
+### 4.3.2 总结
+
+
 
 ## 4.4 执行计划的执行顺序
 
