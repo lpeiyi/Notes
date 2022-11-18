@@ -79,7 +79,7 @@
 
 2. 语言的效率，是SQL语言的最难的地方
 
-   tablesan
+   table san
 
    index range scan
 
