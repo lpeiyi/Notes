@@ -1287,15 +1287,56 @@ select * from table(dbms_xplan.display_cursor('sql_id/hash_value',child_cursor_n
 select * from table(dbms_xplan.display_awr('sql_id'));
 ```
 
-方式1需要与explain plan配合使用，所以获取到的执行计划是不准的。而方式2、3、4所得到的执行计划都是准的，因为目标SQL都已经被实际执行过。
+方式1需要与explain plan配合使用，所以获取到的执行计划是不准的。而**方式2、3、4所得到的执行计划都是准的**，因为目标SQL都已经被实际执行过。
 
-对使用第三种方法（SQLPLUS中的AUTOTRACE开关），使用set autotrace on和set autotrace traceonly是准的，set autotrace traceonly explain是不准的。
+对使用第三种方法（SQLPLUS中的AUTOTRACE开关），**使用set autotrace on和set autotrace traceonly是准的（绑定变量时不准）**，set autotrace traceonly explain是不准的。
 
 ### 4.3.2 总结
 
+经过分析，所以可以通过使用以下几种方式得到准确的执行计划：
 
+1. DBMS_XPLAN 包：
+   - select * from table(dbms_xplan.display_cursor(null,null,'advanced'));
+   - select * from table(dbms_xplan.display_cursor('sql_id',child_cursor_number,'advanced'));
+   - select * from table(dbms_xplan.display_awr('sql_id'));
+2. AUTOTRACE开关（不使用绑定变量）：
+   - set autotrace on
+   - set autotrace traceonly
+3. 10046 事件
 
 ## 4.4 执行计划的执行顺序
+
+执行计划的执行顺序可以按下以下口诀查看：**从上往下，靠右先执行**
+
+1. 先从最开头一直连续往右看，直到最右边并列的地方；
+2. 对于并列的地方，靠右先执行;
+3. 如果见到并列的，就从上往下看，对于并列的部分，靠上的先执行。
+
+示例：
+
+```sql
+SQL> select t1.*,t2.* from t1,t2 where t1.id = t2.id and t1.id < 4;
+执行计划
+----------------------------------------------------------
+Plan hash value: 70475513
+--------------------------------------------------------------------------------------------
+| Id  | Operation                    | Name        | Rows  | Bytes | Cost (%CPU)| Time     |
+--------------------------------------------------------------------------------------------
+|   0 | SELECT STATEMENT             |             |     3 |    30 |     4   (0)| 00:00:01 |
+|   1 |  NESTED LOOPS                |             |       |       |            |          |
+|   2 |   NESTED LOOPS               |             |     3 |    30 |     4   (0)| 00:00:01 |
+|*  3 |    TABLE ACCESS FULL         | T2          |     3 |    15 |     2   (0)| 00:00:01 |
+|*  4 |    INDEX UNIQUE SCAN         | SYS_C007025 |     1 |       |     0   (0)| 00:00:01 |
+|   5 |   TABLE ACCESS BY INDEX ROWID| T1          |     1 |     5 |     1   (0)| 00:00:01 |
+--------------------------------------------------------------------------------------------
+Predicate Information (identified by operation id):
+---------------------------------------------------
+   3 - filter("T2"."ID"<4)
+   4 - access("T1"."ID"="T2"."ID")
+       filter("T1"."ID"<4)
+```
+
+
 
 ## 4.5 常见的执行计划
 
@@ -1334,8 +1375,6 @@ exec DBMS_STATS.GATHER_TABLE_STATS(ownname => 'TEST',tabname => 'T3',cascade => 
 
 
 # 七、Hint
-
-
 
 获取字段优先级
 
