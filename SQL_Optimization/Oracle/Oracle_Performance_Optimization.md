@@ -1376,8 +1376,6 @@ exec DBMS_STATS.GATHER_TABLE_STATS(ownname => 'TEST',tabname => 'T3',cascade => 
 
 # 七、Hint
 
-获取字段优先级
-
 ```sql
 select t.table_name,t.column_name,t.num_distinct
 from user_tab_col_statistics t
