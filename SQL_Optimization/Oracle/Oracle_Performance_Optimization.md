@@ -1308,35 +1308,50 @@ select * from table(dbms_xplan.display_awr('sql_id'));
 
 执行计划的执行顺序可以按下以下口诀查看：**从上往下，靠右先执行**
 
-1. 先从最开头一直连续往右看，直到最右边并列的地方；
-2. 对于并列的地方，靠右先执行;
-3. 如果见到并列的，就从上往下看，对于并列的部分，靠上的先执行。
+1. 先从最开头一直连续往右看，直到**最右边并列**的地方；
+2. 对于**并列的地方，靠右先执行**;
+3. 如果见到并列的，就从上往下看，对于**并列的部分，靠上的先执行**。
 
 示例：
 
 ```sql
-SQL> select t1.*,t2.* from t1,t2 where t1.id = t2.id and t1.id < 4;
+SQL> set autotrace traceonly;
+SQL> select e.empno,e.ename,d.deptno,s.grade from emp e,dept d,salgrade s where e.deptno = d.deptno and d.loc = 'NEW YORK' and e.sal between s.losal and s.hisal;
 执行计划
 ----------------------------------------------------------
-Plan hash value: 70475513
---------------------------------------------------------------------------------------------
-| Id  | Operation                    | Name        | Rows  | Bytes | Cost (%CPU)| Time     |
---------------------------------------------------------------------------------------------
-|   0 | SELECT STATEMENT             |             |     3 |    30 |     4   (0)| 00:00:01 |
-|   1 |  NESTED LOOPS                |             |       |       |            |          |
-|   2 |   NESTED LOOPS               |             |     3 |    30 |     4   (0)| 00:00:01 |
-|*  3 |    TABLE ACCESS FULL         | T2          |     3 |    15 |     2   (0)| 00:00:01 |
-|*  4 |    INDEX UNIQUE SCAN         | SYS_C007025 |     1 |       |     0   (0)| 00:00:01 |
-|   5 |   TABLE ACCESS BY INDEX ROWID| T1          |     1 |     5 |     1   (0)| 00:00:01 |
---------------------------------------------------------------------------------------------
+Plan hash value: 2197699399
+----------------------------------------------------------------------------------
+| Id  | Operation             | Name     | Rows  | Bytes | Cost (%CPU)| Time     |
+----------------------------------------------------------------------------------
+|   0 | SELECT STATEMENT      |          |    14 |   532 |     7  (15)| 00:00:01 |
+|*  1 |  HASH JOIN            |          |    14 |   532 |     7  (15)| 00:00:01 |
+|   2 |   MERGE JOIN CARTESIAN|          |     5 |   105 |     4   (0)| 00:00:01 |
+|*  3 |    TABLE ACCESS FULL  | DEPT     |     1 |    11 |     2   (0)| 00:00:01 |
+|   4 |    BUFFER SORT        |          |     5 |    50 |     2   (0)| 00:00:01 |
+|   5 |     TABLE ACCESS FULL | SALGRADE |     5 |    50 |     2   (0)| 00:00:01 |
+|   6 |   TABLE ACCESS FULL   | EMP      |    14 |   238 |     2   (0)| 00:00:01 |
+----------------------------------------------------------------------------------
 Predicate Information (identified by operation id):
 ---------------------------------------------------
-   3 - filter("T2"."ID"<4)
-   4 - access("T1"."ID"="T2"."ID")
-       filter("T1"."ID"<4)
+   1 - access("E"."DEPTNO"="D"."DEPTNO")
+       filter("E"."SAL">="S"."LOSAL" AND "E"."SAL"<="S"."HISAL")
+   3 - filter("D"."LOC"='NEW YORK')
+统计信息
+----------------------------------------------------------
+          0  recursive calls
+          0  db block gets
+          7  consistent gets
+          0  physical reads
+          0  redo size
+        834  bytes sent via SQL*Net to client
+        523  bytes received via SQL*Net from client
+          2  SQL*Net roundtrips to/from client
+          1  sorts (memory)
+          0  sorts (disk)
+          3  rows processed
 ```
 
-
+根据口诀，可以得出此执行计划的执行顺序为：3 → 5 → 4 → 2 → 6 → 1 → 0
 
 ## 4.5 常见的执行计划
 
