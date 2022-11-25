@@ -1381,9 +1381,13 @@ Predicate Information (identified by operation id):
 
 根据口诀，可以得出此执行计划的执行顺序为：3 → 5 → 4 → 2 → 6 → 1 → 0
 
-# 五、查询转换
+# 五、Cursor和绑定变量
 
-# 六、统计信息
+
+
+# 六、查询转换
+
+# 七、统计信息
 
 查看上一次收集统计信息的时间
 
@@ -1413,9 +1417,7 @@ END;
 exec DBMS_STATS.GATHER_TABLE_STATS(ownname => 'TEST',tabname => 'T3',cascade => TRUE,no_invalidate => FALSE,degree => 4);
 ```
 
-
-
-# 七、Hint
+# 八、Hint
 
 ```sql
 select t.table_name,t.column_name,t.num_distinct
