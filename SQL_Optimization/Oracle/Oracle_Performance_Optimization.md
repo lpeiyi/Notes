@@ -1379,11 +1379,26 @@ Predicate Information (identified by operation id):
           3  rows processed
 ```
 
+
 根据口诀，可以得出此执行计划的执行顺序为：3 → 5 → 4 → 2 → 6 → 1 → 0
 
-# 五、查询转换
 
-# 六、统计信息
+# 五、Cursor和绑定变量
+
+![image-20221127220755940](Oracle_Performance_Optimization.assets/image-20221127220755940.png)
+
+从上图可以看出，Oracle在解析目标SQL时去库缓存中查找匹配Shared Cursor的过程实际上时依次顺序执行以下步骤：
+
+1. 根据目标SQL的SQL文本的哈希值去缓存库中找匹配的Hash Bucket。
+2. 然后在匹配的Hash Bucket的缓存库对象链表中查找匹配的Parent Cursor，并比对目标SQL的SQL文本（因为不同的SQL计算出来的哈希值可能是相同的）。
+3. 步骤二（图中）如果找到了匹配的Parent Cursor，则Oracle接下来就会遍历从属该Parent Cursor的所有Child Cursor以查找匹配的Child Cursor。
+4. 步骤二如果找不到匹配的Parent Cursor，则也意味着此时没有可以共享的解析树和执行计划，Oracle就会从头开始解析上述的SQL，新生成一个Parent Cursor和一个Child Cursor，并把它们挂在对应的Hash Bucket中。
+5. 步骤三如果找到了匹配的Child Cursor，则Oracle就会把存储于该Child Cursor中的解析树和执行计划直接拿过来重用，而不用再从头开始解析。
+6. 步骤三如果找不到匹配的Child Cursor，则意味着没有共享的解析树和执行计划，接下来Oracle也会从头开始解析SQL，新生成一个Child Cursor，并把这个Child Cursor挂在对应的Parent Cursor下。
+
+# 六、查询转换
+
+# 七、统计信息
 
 查看上一次收集统计信息的时间
 
@@ -1413,9 +1428,7 @@ END;
 exec DBMS_STATS.GATHER_TABLE_STATS(ownname => 'TEST',tabname => 'T3',cascade => TRUE,no_invalidate => FALSE,degree => 4);
 ```
 
-
-
-# 七、Hint
+# 八、Hint
 
 ```sql
 select t.table_name,t.column_name,t.num_distinct
