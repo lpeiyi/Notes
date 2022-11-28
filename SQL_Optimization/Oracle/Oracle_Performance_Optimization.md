@@ -1382,8 +1382,29 @@ Predicate Information (identified by operation id):
 
 根据口诀，可以得出此执行计划的执行顺序为：3 → 5 → 4 → 2 → 6 → 1 → 0
 
-
 # 五、Cursor和绑定变量
+
+系统随着并发数量的递增而显著降低，因为没有使用绑定变量而产生了大量的硬解析导致的。
+
+## 5.1 Cursor
+
+游标是Oracle数据库中SQL解析和执行的载体，从本质上来说，游标是一种结构（Structure）。
+
+Cursor分为两种类型：一种是Shared Cursor；另一种是Session Cursor。
+
+### 5.1.1 Share Cursor
+
+指缓存在库缓存里的一种库缓存对象，就是指缓存在库缓存里的SQL语句和匿名PL/SQL语句所对应的缓存对象。
+
+Shared Cursor里会存储目标SQL的SQL文本、解析树、该SQL所涉及的对象定义、该SQL使用的绑定变量类型和长度，以及SQL的执行计划等信息。
+
+**Shared Cursor又分为Parent Cursor（父游标）和Child Cursor（子游标）。可以分别查询视图V$SQLAREA和V$SQL来查看当前缓存在库缓存中的Parent Cursor。**
+
+只用通过Parent Cursor才能找到相应的Child Cursor。
+
+**任意一个目标SQL一定会同时对应两个Shared Cursor，一个是父游标，一个是子游标。父游标会存储目标SQL的SQL文本，而SQL真正的可以被重用的解析树和执行计划则存储在子游标中。**
+
+#### 5.1.1.1 Share Cursor的含义
 
 ![image-20221127220755940](Oracle_Performance_Optimization.assets/image-20221127220755940.png)
 
@@ -1395,6 +1416,10 @@ Predicate Information (identified by operation id):
 4. 步骤二如果找不到匹配的Parent Cursor，则也意味着此时没有可以共享的解析树和执行计划，Oracle就会从头开始解析上述的SQL，新生成一个Parent Cursor和一个Child Cursor，并把它们挂在对应的Hash Bucket中。
 5. 步骤三如果找到了匹配的Child Cursor，则Oracle就会把存储于该Child Cursor中的解析树和执行计划直接拿过来重用，而不用再从头开始解析。
 6. 步骤三如果找不到匹配的Child Cursor，则意味着没有共享的解析树和执行计划，接下来Oracle也会从头开始解析SQL，新生成一个Child Cursor，并把这个Child Cursor挂在对应的Parent Cursor下。
+
+#### 5.1.1.2 硬解析
+
+
 
 # 六、查询转换
 
