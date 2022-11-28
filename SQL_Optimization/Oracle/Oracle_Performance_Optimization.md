@@ -1379,7 +1379,9 @@ Predicate Information (identified by operation id):
           3  rows processed
 ```
 
+
 根据口诀，可以得出此执行计划的执行顺序为：3 → 5 → 4 → 2 → 6 → 1 → 0
+
 
 # 五、Cursor和绑定变量
 
