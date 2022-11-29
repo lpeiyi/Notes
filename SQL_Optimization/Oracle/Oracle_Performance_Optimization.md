@@ -1404,6 +1404,44 @@ Shared Cursor里会存储目标SQL的SQL文本、解析树、该SQL所涉及的�
 
 **任意一个目标SQL一定会同时对应两个Shared Cursor，一个是父游标，一个是子游标。父游标会存储目标SQL的SQL文本，而SQL真正的可以被重用的解析树和执行计划则存储在子游标中。**
 
+示例：
+
+```sql
+SQL> select empno,ename from emp;
+
+     EMPNO ENAME
+---------- --------------------
+      7369 SMITH
+      7499 ALLEN
+已选择2行。
+
+SQL> col sql_text for a30;
+
+SQL> select sql_text,sql_id,version_count from v$sqlarea where sql_text like 'select empno,ename%';
+SQL_TEXT                       SQL_ID                     VERSION_COUNT
+------------------------------ -------------------------- -------------
+select empno,ename from emp    78bd3uh4a08av                          1
+
+SQL> select plan_hash_value,child_number from v$sql where sql_id = '78bd3uh4a08av';
+PLAN_HASH_VALUE CHILD_NUMBER
+--------------- ------------
+     3956160932            0
+```
+
+#### 5.1.1.0 库缓存
+
+Library Cache，是SGA中的一块内存区域（具体来说，是Shared Pool中的一块内存区域），它的主要作用是缓存刚刚执行过的SQL语句和PL/SQL语句（如存储过程、函数、包、触发器）所对应的解析树（Parse Tree）、执行计划等对象。当同样的SQL语句和PL/SQL语句再次被执行时，就可以利用已经缓存在Library Cache中的那些相关对象而无须再次从头开始解析，这样就提高了这些SQL语句和PL/SQL语句在重复执行时的执行效率。
+
+缓存在库缓存中的对象我们称之为库缓存对象（Library Cache Object）， 所有的库缓存对象都是以一种名为**库缓存对象句柄**（Library Cache Object Handle）的结构存储在库缓存中，**Oracle 是通过访问相关的库缓存对象句柄来访问对应的库缓存对象**的。
+
+实际上，库缓存对象句柄是以哈希表（Hash Table）的方式存储在库缓存中的，这意味着Oracle会通过相关的哈希运算来存储和访问对应的库缓存对象句柄。库缓存的组成结构如下：
+
+![image-20221129172916819](Oracle_Performance_Optimization.assets/image-20221129172916819.png)
+
+从图中可以看出，整个库缓存可以看作是由一组Hash Bucket 所组成，每一个Hash Bucket 都对应不同的哈希值。对于单个Hash Bucket而言，里面存储的就是哈希值相同的所有库缓存对象句柄，同一个Hash Bucket中不同的库缓存对象句柄之间会用指针连接起来，即同-一个Hash Bucket中不同的库缓存对象句柄之间实际上组成了一个库缓存对象句柄链表（Library Cache Object Handles）。
+
+从图中还可以看出，当Oracle要执行目标SQL“select * from emp”时，**首先会对该SQL的SQL文本施以哈希运算，然后根据得到的哈希值去相关的Hash Bucket中遍历对应的库缓存对象句柄链表，如果找到了对应的库缓存对象句柄，就可以直接访问到该SQL的执行计划、解析树等对象，这意味着可以直接重用这些对象而无须再次从头开始解析**；如果找不到对应的库缓存对象句柄，则意味着必须从头开始解析，并且把解析后的执行计划、解析树等对象以库缓存对象句柄的方式链接在相关的Hash Bucket中的库缓存对象句柄链表中。
+
 #### 5.1.1.1 Share Cursor的含义
 
 ![image-20221127220755940](Oracle_Performance_Optimization.assets/image-20221127220755940.png)
