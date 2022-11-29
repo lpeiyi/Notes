@@ -194,7 +194,7 @@ Enqueue 是Oracle使用的另一种锁定机制，它更加复杂，**允许几�
 
 Latch是用于保护SGA（System Global Area）系统全局区中共享数据结构的一种**串行化**锁定机制。Latch的实现是与操作系统相关的，尤其和一个进程是否需要等待一个latch、需要等待多长时间有关。
 
- Latch 是一种能够极快地被获取和释放的锁，它通常用于保护描述buffer cache中block的数据结构。与每个latch相联系的还有一个清除过程，当持有latch的进程成为死进程时，该清除过程就会被调用。Latch 还具有相关级别，用于防止死锁，一旦一个进程在某个级别上得到一个latch，它就不可能再获得等同或低于该级别的latch。
+ Latch 是一种能够极快地被获取和释放的**锁**，它通常用于保护描述buffer cache中block的数据结构。与每个latch相联系的还有一个清除过程，当持有latch的进程成为死进程时，该清除过程就会被调用。Latch 还具有相关级别，用于防止死锁，一旦一个进程在某个级别上得到一个latch，它就不可能再获得等同或低于该级别的latch。
 
 当一个进程准备访问SGA中的数据结构时，它就需要获得一个latch。当进程获得latch后，它将一直持有该latch直到它不再使用此数据结构，这时latch才会被释放。可通过latch名称来区分它所保护的不同数据结构。
 
@@ -1382,8 +1382,29 @@ Predicate Information (identified by operation id):
 
 根据口诀，可以得出此执行计划的执行顺序为：3 → 5 → 4 → 2 → 6 → 1 → 0
 
-
 # 五、Cursor和绑定变量
+
+系统随着并发数量的递增而显著降低，因为没有使用绑定变量而产生了大量的硬解析导致的。
+
+## 5.1 Cursor
+
+游标是Oracle数据库中SQL解析和执行的载体，从本质上来说，游标是一种结构（Structure）。
+
+Cursor分为两种类型：一种是Shared Cursor；另一种是Session Cursor。
+
+### 5.1.1 Share Cursor
+
+指缓存在库缓存里的一种库缓存对象，就是指缓存在库缓存里的SQL语句和匿名PL/SQL语句所对应的缓存对象。
+
+Shared Cursor里会存储目标SQL的SQL文本、解析树、该SQL所涉及的对象定义、该SQL使用的绑定变量类型和长度，以及SQL的执行计划等信息。
+
+**Shared Cursor又分为Parent Cursor（父游标）和Child Cursor（子游标）。可以分别查询视图V$SQLAREA和V$SQL来查看当前缓存在库缓存中的Parent Cursor。**
+
+只用通过Parent Cursor才能找到相应的Child Cursor。
+
+**任意一个目标SQL一定会同时对应两个Shared Cursor，一个是父游标，一个是子游标。父游标会存储目标SQL的SQL文本，而SQL真正的可以被重用的解析树和执行计划则存储在子游标中。**
+
+#### 5.1.1.1 Share Cursor的含义
 
 ![image-20221127220755940](Oracle_Performance_Optimization.assets/image-20221127220755940.png)
 
@@ -1395,6 +1416,30 @@ Predicate Information (identified by operation id):
 4. 步骤二如果找不到匹配的Parent Cursor，则也意味着此时没有可以共享的解析树和执行计划，Oracle就会从头开始解析上述的SQL，新生成一个Parent Cursor和一个Child Cursor，并把它们挂在对应的Hash Bucket中。
 5. 步骤三如果找到了匹配的Child Cursor，则Oracle就会把存储于该Child Cursor中的解析树和执行计划直接拿过来重用，而不用再从头开始解析。
 6. 步骤三如果找不到匹配的Child Cursor，则意味着没有共享的解析树和执行计划，接下来Oracle也会从头开始解析SQL，新生成一个Child Cursor，并把这个Child Cursor挂在对应的Parent Cursor下。
+
+#### 5.1.1.2 硬解析
+
+**Hard Parse，是指在执行SQL时，在库缓存中找不到可以重用的解析树和执行计划**。
+
+发生硬解析的情况有两种：一是在库缓存找不到匹配的Parent Cursor，二是在库缓存找到匹配的Parent Cursor，但找不到匹配的Child Cursor。这两种情况都需要从头开始解析SQL重新生成Parent Cursor或Child Cursor。
+
+硬解析的危害性如下：
+
+1. 硬解析可能会导致Shared Pool Latch的争用。
+2. 硬解析可能会导致库缓存相关Latch【如Library Cache Latch （11gR1以前的版本）】和Mutex（11gR1开始，Mutex替换了库缓存相关的Latch）的争用。
+
+硬解析在不同类型的系统中影响也是不同的。**在高并发的OLTP类型的系统中，硬解析会严重影响系统的性能和可扩展性，是万恶之源。**但在并发数量很少的OLAP系统中，硬解析没什么危害性。
+
+#### 5.1.1.3 软解析
+
+**Soft Parse，是指在执行SQL时，在库缓存中找到了匹配的Parent Cursor和Child Cursor，并将存储在Child Cursor中的解析树和执行计划直接拿过来重用，而无需从头开始解析目标SQL的过程**。
+
+软解析的优点：
+
+1. 不会导致Shared Pool Latch的争用。
+2. 虽然可能会导致库缓存相关Latch（如Library Cache Latch）和Mutex的争用，但是争用所带来的系统性能和可扩展性的问题比较少。
+
+正是基于上述两个方面的原因，**如果OLTP类型的系统在执行目标SQL时能够广泛使用软解析，则系统的性能和可扩展性就会比全部使用硬解析时有显著的提升，执行目标SQL时需要消耗的系统资源（主要体现在CPU上）也会显著降低**。
 
 # 六、查询转换
 
