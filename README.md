@@ -1,2 +1,3 @@
 # Notes
-https://github.com/lpeiyi/Notes.git
+个人的学习笔记。
+My study notes.
