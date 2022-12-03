@@ -1479,6 +1479,109 @@ Library Cache，是SGA中的一块内存区域（具体来说，是Shared Pool�
 
 正是基于上述两个方面的原因，**如果OLTP类型的系统在执行目标SQL时能够广泛使用软解析，则系统的性能和可扩展性就会比全部使用硬解析时有显著的提升，执行目标SQL时需要消耗的系统资源（主要体现在CPU上）也会显著降低**。
 
+### 5.1.2 Session Cursor
+
+#### 5.1.2.1 Session Cursor的含义
+
+Session Cursor是Oracle数据库里第二种类型的Cursor，它是当前Session解析和执行SQL的载体，换句话说, Session Cursor用于在当前Session中解析和执行SQL。和Shared Cursor一样，Session Cursor也是Oracle自定义的一种C语言复杂结构，它也是以哈希表的方式缓存起来的，只不过是缓存在PGA中，而Shared Cursor缓存在SGA的库缓存里。
+
+**Session Cursor的特点**：
+
+1. Session Cursor与Session是一一对应的， 不同Session的Session Cursor之间没法共享，这是与Shared Cursor的本质区别。
+2. Session Cursor是有生命周期的，每个Session Cursor在使用的过程中都至少会经历一次 Open、Parse、Bind、Execute、Fetch和Close（打开，解析，绑定，执行，获取和关闭）中的一个或多个阶段，用过的Session Cursor不一定会缓存在对应Session的PGA中，这取决于参数**SESSION _CACHED_ CURSORS** 的值是否大于0。**第一次执行SQL（硬解析）后，再次执行SQL时（软解析），SESSION _CACHED_ CURSORS参数值为0；软解析后再次执行SQL后（此时为第三次执行），参数值为1，这时可以匹配到Session Cursor，不用再取匹配Shared Cursor，这个过程为 “软软解析”**。
+3. 既然Session Cursor 也是以哈希表的方式缓存在PGA中，意味着Oracle 会通过相关的哈希运算来存储和访问在当前Session的PGA中的对应Session Cursor。Oracle是根据目标SQL的SQL文本的哈希值去PGA中的相应HashBucket中找匹配的Session Cursor。
+
+Oracle在解析和执行目标SQL时，会先去当前Session的PGA中找是否存在匹配的缓存Session Cursor。通过Session Cursor找到对应的Parent Cursor，然后Oracle就可以按照这个解析树和执行计划来执行目标SQL了。
+
+**一个Session Cursor 只能对应一个Shared Cursor，而一个Shared Cursor 可以对应多个Session Cursor**。
+
+**Session Cursor与Shared Cursor的联系**：
+
+- 无论是硬解析、软解析还是软软解析，Oracle 在解析和执行目标SQL时，始终会先去当前Session的PGA中寻找是否存在匹配的缓存SessionCursor。
+- 如果在当前Session的PGA中找不到匹配的缓存SessionCursor，Oracle就会去库缓存中找是否存在匹配的Parent Cursor.如果找不到，Oracle就会新生成- -个Session Cursor和一对 Shared Cursor（即Parent Cursor和Child Cursor）；
+  如果找到了匹配的Parent Cursor，但找不到匹配的Child Cursor，Oracle 就会新生成一个Session Cursor和一个Child Cursor（这个Child Cursor 会被挂在之前找到的匹配Parent Cursor下）。无论哪一种情况，**这两个过程对应的都是硬解析**。
+- 如果在当前Session的PGA中找不到匹配的缓存Session Cursor，但在库缓存中找到了匹配的Parent Cursor和Child Cursor，则Oracle会新生成一个Session Cursor并重用刚刚找到的匹配Parent Cursor和Child Cursor，这个过程对应的就是**软解析**。
+- 如果在当前Session的PGA中找到了匹配的缓存SessionCursor，此时就不再需要新生成一个Session Cursor，并且也不再需要像软解析那样得去库缓存中查找匹配的ParentCursor了，因为Oracle此时可以重用找到的匹配Session Cursor，并且可以通过这个Session Cursor直接访问到该SQL对应的Paret Cursor，这个过程就是**软软解析**。
+
+#### 5.1.2.2 Session Cursor的种类和用法
+
+Session Cursor有三种类型，分别是**隐式游标**（Implicit Cursor）、**显示游标**（Explicit Cursor）和**参考游标**（Ref Cursor）。
+
+##### 5.1.2.2.1 隐式游标
+
+最常见的Session Cursor，我们在SQLPLUS或者在PL/SQL代码中直接执行SQL脚本时，会自动创建隐式游标作为SQL脚本的载体。
+
+隐式游标的生命周期管理全部由SQL引擎或PL/SQL引擎自动完成，无需我们手动写额外的代码。以下四个为最常用的属性（用于DML和SELECT INTO）：
+
+###### 1. SQL%FOUND
+
+表示一条SQL语句执行成功后改变的记录数是否大于或等于1。在一条DML语句被执行前，SQL%FOUND的值是NULL。当这条DML语句被执行并且成功改变了一条或者一条以上记录的时候，又或者SELECT INTO语句成功返回一条或者一条以上记录的时候，SQL%FOUND的值是TRUE，否则为FALSE。
+
+示例：
+
+```sql
+SQL> SELECT * FROM T1;
+      COL1 CO
+---------- --
+         1 A
+         2 B
+         5 C
+SQL> SET SERVEROUT ON;
+SQL> DECLARE
+  2  RUN_STEP VARCHAR2(100);
+  3  COL1_VALUE NUMBER := 5;
+  4  BEGIN
+  5  RUN_STEP := '表TEST.T1删除COL1>=5的记录';
+  6  DELETE FROM TEST.T1 WHERE COL1 >= COL1_VALUE;
+  7  IF SQL%FOUND THEN
+  8  DBMS_OUTPUT.PUT_LINE(RUN_STEP);
+  9  ELSE
+ 10  DBMS_OUTPUT.PUT_LINE('表TEST.T1无COL1>=5的记录');
+ 11  END IF;
+ 12  COMMIT;
+ 13  END;
+ 14  /
+表TEST.T1删除COL1>=5的记录
+PL/SQL 过程已成功完成。
+```
+
+**注意**：set serverout on 的作用是sqlplus开启打印输出功能。
+
+###### 2. SQL%NOTFOUND
+
+这个参数和SQL%FOUND正好相反。当一条DML语句被执行且这条DML语句没有改变任何记录的时候，又或者SELECT INTO语句没有返回任何记录的时候，SQL%NOTFOUND的值是TRUE，否则为FALSE。
+
+###### 3. SQL%ISOPEN
+
+SQL%ISOPEN表示隐式游标是否处于Open状态，值为布尔类型。
+对于隐式游标而言，SQL%ISOPEN的值永远是FALSE。因为Oracle一旦执行完隐式游标所对应的SQL语句后就会自动Close该隐式游标。所以对于隐式游标而言，SQL%ISOPEN的值永远是FALSE。
+
+###### 4. SQL%ROWCOUNT ★最常用★
+
+当与DML语句联用时，SQL%ROWCOUNT表示该DML语句被执行后受其影响而改变的记录数。当一条DML语句被执行后没有改变任何记录，又或者SELECT INTO语句所对应的SELECT语句没有返回任何记录的时候，SQL%ROWCOUNT 的值是0。
+
+```sql
+SQL> DECLARE
+  2  RUN_STEP VARCHAR2(100);
+  3  RUN_NUM NUMBER;
+  4  BEGIN
+  5  RUN_STEP := '删除表T1全部记录';
+  6  DELETE FROM TEST.T1;
+  7  RUN_NUM := SQL%ROWCOUNT;
+  8  DBMS_OUTPUT.PUT_LINE(RUN_STEP || ',记录数:' || RUN_NUM);
+  9  COMMIT;
+ 10  END;
+ 11  /
+删除表T1全部记录,记录数:2
+PL/SQL 过程已成功完成。
+```
+
+##### 5.1.2.2.2 显示游标
+
+
+
+##### 5.1.2.2.3 参考游标
+
 # 六、查询转换
 
 # 七、统计信息
