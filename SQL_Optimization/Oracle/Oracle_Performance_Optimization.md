@@ -1578,9 +1578,21 @@ PL/SQL 过程已成功完成。
 
 ##### 5.1.2.2.2 显示游标
 
+​	Explicit Cursor，常用于PL/SQL代码（如存储过程、函数、Package）中，和隐性游标不同的是，其定义和生命周期管理中的Open、Fetch和Close是我们在PL/sql代码显示控制的。 以下四个为最常用的属性（Cursor_Name为自定义的游标名）,使用方式和隐形游标差不多。
 
+###### 1. Cursor_Name%FOUND
+
+
+
+###### 2. Cursor_Name%NOTFOUND
+
+###### 3. Cursor_Name%ISOPEN
+
+###### 4. Cursor_Name%ROWCOUNT
 
 ##### 5.1.2.2.3 参考游标
+
+
 
 # 六、查询转换
 
