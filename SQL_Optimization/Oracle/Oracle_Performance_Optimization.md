@@ -1601,6 +1601,7 @@ Explicit Cursor，常用于PL/SQL代码（如存储过程、函数、Package）�
 
 4. Cursor_Name%ROWCOUNT
 
+
 参考游标是最灵活的Session_Cursor，主要体现在以下几个方面：
 
 - 定义方式灵活，可以有多种定义方式，有强类型和弱类型定义方式。
@@ -1608,7 +1609,6 @@ Explicit Cursor，常用于PL/SQL代码（如存储过程、函数、Package）�
 - 可以作为存储过程的输入参数和函数的输出参数。
 
 **用法展示**：
-
 ```sql
 declare
   --强类型的游标类型
@@ -1653,7 +1653,6 @@ begin
   close weak_cursor;
 end;
 ```
-
 # 六、查询转换
 
 # 七、统计信息
