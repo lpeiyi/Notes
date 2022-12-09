@@ -1507,7 +1507,7 @@ Oracle在解析和执行目标SQL时，会先去当前Session的PGA中找是否�
 
 Session Cursor有三种类型，分别是**隐式游标**（Implicit Cursor）、**显示游标**（Explicit Cursor）和**参考游标**（Ref Cursor）。
 
-##### 5.1.2.2.1 隐式游标
+##### 5.1.2.2.1 隐式游标 - 静态游标
 
 最常见的Session Cursor，我们在SQLPLUS或者在PL/SQL代码中直接执行SQL脚本时，会自动创建隐式游标作为SQL脚本的载体。
 
@@ -1576,25 +1576,83 @@ SQL> DECLARE
 PL/SQL 过程已成功完成。
 ```
 
-##### 5.1.2.2.2 显示游标
+##### 5.1.2.2.2 显式游标 - 静态游标
+Explicit Cursor，常用于PL/SQL代码（如存储过程、函数、Package）中，和隐性游标不同的是，其定义和生命周期管理中的Open、Fetch和Close是我们在PL/sql代码显示控制的。 以下四个为最常用的属性（Cursor_Name为自定义的游标名），使用方式和隐形游标差不多。
+
+1. Cursor_Name%FOUND
+
+2. Cursor_Name%NOTFOUND
+
+3. Cursor_Name%ISOPEN
+
+4. Cursor_Name%ROWCOUNT
+
+**用法不再阐述，请自行验证**😆。
+
+##### 5.1.2.2.3 参考游标 - 动态游标
+
+参考游标是最后一种Session_Cursor，和显示游标一样，其定义和生命周期管理中的Open、Fetch和Close是我们在PL/sql代码显示控制的。
+
+1. Cursor_Name%FOUND
+
+2. Cursor_Name%NOTFOUND
+
+3. Cursor_Name%ISOPEN
+
+4. Cursor_Name%ROWCOUNT
 
 
-Explicit Cursor，常用于PL/SQL代码（如存储过程、函数、Package）中，和隐性游标不同的是，其定义和生命周期管理中的Open、Fetch和Close是我们在PL/sql代码显示控制的。 以下四个为最常用的属性（Cursor_Name为自定义的游标名）,使用方式和隐形游标差不多。
+参考游标是最灵活的Session_Cursor，主要体现在以下几个方面：
 
-###### 1. Cursor_Name%FOUND
+- 定义方式灵活，可以有多种定义方式，有强类型和弱类型定义方式。
+- open的方式也十分灵活，可以不和某个固定的sql绑定在一起，**可以随时open，并且每次open所对应的sql可以不同**。
+- 可以作为存储过程的输入参数和函数的输出参数。
 
+**用法展示**：
+```sql
+declare
+  --强类型的游标类型
+  type strong_cursor_type is ref cursor return emp%rowtype;
+  --弱类型的游标类型
+  type weak_cursor_type is ref cursor;
+  --多种定义方式
+  strong_cursor strong_cursor_type; --强类型
+  weak_cursor   weak_cursor_type; --r
+  v_emp         emp%rowtype;
+  v_dept        dept%rowtype;
+  run_string    clob;
+  tab           varchar2(50);
+begin
+  run_string := 'select * from emp';
+  open strong_cursor for select * from emp;
+  loop
+    fetch strong_cursor
+      into v_emp;
+    exit when strong_cursor%notfound;
+    dbms_output.put_line(v_emp.empno || '-' || v_emp.ename);
+  end loop;
+  close strong_cursor;
 
-
-###### 2. Cursor_Name%NOTFOUND
-
-###### 3. Cursor_Name%ISOPEN
-
-###### 4. Cursor_Name%ROWCOUNT
-
-##### 5.1.2.2.3 参考游标
-
-
-
+  dbms_output.put_line('------------参考游标的open方式十分灵活------------');
+  tab := '&tab';
+  if tab = 'emp' then
+    dbms_output.put_line(tab);
+    run_string := 'select * from emp where rownum <= 5';
+    open weak_cursor for run_string;
+    fetch weak_cursor
+      into v_emp;
+    dbms_output.put_line(v_emp.empno || '-' || v_emp.ename);
+  elsif tab = 'dept' then
+    dbms_output.put_line(tab);
+    run_string := 'select * from dept where rownum <= 5';
+    open weak_cursor for run_string;
+    fetch weak_cursor
+      into v_dept;
+    dbms_output.put_line(v_dept.deptno || '-' || v_dept.DNAME);
+  end if;
+  close weak_cursor;
+end;
+```
 # 六、查询转换
 
 # 七、统计信息
