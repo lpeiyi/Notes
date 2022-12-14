@@ -1589,6 +1589,14 @@ Explicit Cursor，常用于PL/SQL代码（如存储过程、函数、Package）�
 
 **用法不再阐述，请自行验证**😆。
 
+示例：
+
+```sql
+
+```
+
+
+
 ##### 5.1.2.2.3 参考游标 - 动态游标
 
 参考游标是最后一种Session_Cursor，和显示游标一样，其定义和生命周期管理中的Open、Fetch和Close是我们在PL/sql代码显示控制的。
@@ -1653,6 +1661,47 @@ begin
   close weak_cursor;
 end;
 ```
+## 5.2 绑定变量
+
+Bind variable是一种特殊类型的变量，又被称为占位符（Placeholder），绑定变量通常用于目标Sql的sql文本中，用于替换SQL文本中的where条件或者value子句（适用于insert语句）中的具体输入值。
+
+使用语法是“**:variable_name**”，用冒号和自定义变量名称的组合来替换目标SQL的SQL文本中的具体输入值，自定义变量名称variable_name可以是字母、数字或字母数字组合，例如“ select * from emp where ename = :name”；
+
+### 5.2.1 绑定变量的作用
+
+**为了降低OLTP系统中硬解析的数量。**
+
+使用了绑定变量后，SQL文本就变得完全相同，对应的hash值也完全相同，因此可以重用解析树和执行计划了。
+
+### 5.2.2 绑定变量的典型用法
+
+#### 5.2.2.1 PL/SQL中select语句使用绑定变量
+
+
+
+```sql
+declare
+  e_no number;
+  run_string clob;
+begin
+  run_string := 'select t.empno from scott.emp t where t.ename = :name';
+  execute immediate run_string into e_no using 'SMITH';
+  dbms_output.put_line(e_no);      
+end;
+```
+
+从上述可以看出，在PL/SQL中使用绑定变量的标准语法为：
+
+```sql
+execute immediate '待绑定变量的SQL文本'  using '绑定变量具体的输入值'
+```
+
+#### 5.2.2.2 PL/SQL中DML语句使用绑定变量
+
+
+
+#### 5.2.2.3 PL/SQL中语句使用绑定变量
+
 # 六、查询转换
 
 # 七、统计信息
