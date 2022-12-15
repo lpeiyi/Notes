@@ -1507,7 +1507,7 @@ Oracle在解析和执行目标SQL时，会先去当前Session的PGA中找是否�
 
 Session Cursor有三种类型，分别是**隐式游标**（Implicit Cursor）、**显示游标**（Explicit Cursor）和**参考游标**（Ref Cursor）。
 
-##### 5.1.2.2.1 隐式游标 - 静态游标
+##### 5.1.2.2.1 隐式游标
 
 最常见的Session Cursor，我们在SQLPLUS或者在PL/SQL代码中直接执行SQL脚本时，会自动创建隐式游标作为SQL脚本的载体。
 
@@ -1589,6 +1589,42 @@ Explicit Cursor，常用于PL/SQL代码（如存储过程、函数、Package）�
 
 **用法不再阐述，请自行验证**😆。
 
+示例：
+
+```sql
+declare
+  run_string clob;
+  RUN_NUM NUMBER;
+  INTT_COL1  TEST.T1.COL1%TYPE;
+  INTT_COL2  TEST.T1.COL2%TYPE;
+  cursor cur_t1 is select col1, col2 from test.t1 where rownum <= 10;
+begin
+  IF CUR_T1%ISOPEN = FALSE THEN
+    dbms_output.put_line('游标未打开');
+    OPEN CUR_T1;
+  END IF;
+  loop
+    FETCH CUR_T1
+      INTO INTT_COL1, INTT_COL2;
+    dbms_output.put_line(INTT_COL1 || ' ' || INTT_COL2);
+    IF CUR_T1%NOTFOUND THEN
+      EXIT;
+    END IF;
+  end loop;
+  RUN_NUM := CUR_T1%ROWCOUNT;
+  dbms_output.put_line(RUN_NUM);
+  CLOSE CUR_T1;
+EXCEPTION
+  WHEN OTHERS THEN
+    IF CUR_T1%ISOPEN THEN
+      dbms_output.put_line('游标未关闭');
+      close cur_t1;
+    END IF;
+    RETURN;
+end;
+/
+```
+
 ##### 5.1.2.2.3 参考游标 - 动态游标
 
 参考游标是最后一种Session_Cursor，和显示游标一样，其定义和生命周期管理中的Open、Fetch和Close是我们在PL/sql代码显示控制的。
@@ -1653,6 +1689,127 @@ begin
   close weak_cursor;
 end;
 ```
+## 5.2 绑定变量
+
+Bind variable是一种特殊类型的变量，又被称为占位符（Placeholder），绑定变量通常用于目标Sql的sql文本中，用于替换SQL文本中的where条件或者value子句（适用于insert语句）中的具体输入值。
+
+使用语法是“**:variable_name**”，用冒号和自定义变量名称的组合来替换目标SQL的SQL文本中的具体输入值，自定义变量名称variable_name可以是字母、数字或字母数字组合，例如“ select * from emp where ename = :name”；
+
+### 5.2.1 绑定变量的作用
+
+**为了降低OLTP系统中硬解析的数量。**
+
+使用了绑定变量后，SQL文本就变得完全相同，对应的hash值也完全相同，因此可以重用解析树和执行计划了。
+
+### 5.2.2 绑定变量的典型用法
+
+#### 5.2.2.1 PL/SQL中select语句使用绑定变量
+
+```sql
+declare
+  e_no number;
+  run_string clob;
+begin
+  run_string := 'select t.empno from scott.emp t where t.ename = :name';
+  execute immediate run_string into e_no using 'SMITH';
+  dbms_output.put_line(e_no);      
+end;
+```
+
+从上述可以看出，在PL/SQL中使用绑定变量的标准语法为：
+
+```sql
+execute immediate '待绑定变量的SQL文本'  using '绑定变量具体的输入值'
+```
+
+#### 5.2.2.2 PL/SQL中DML语句使用绑定变量
+
+```SQL
+DECLARE
+  RUN_STRING CLOB;
+  INIT_COL2 VARCHAR2(10);
+  INIT_TABLE VARCHAR2(10);
+  CURSOR CUR_T1 IS SELECT COL1, COL2 FROM TEST.T1 WHERE ROWNUM <= 10;
+BEGIN
+  INIT_TABLE := 'test.t2';
+  DBMS_OUTPUT.PUT_LINE(INIT_TABLE);    
+  RUN_STRING := 'truncate table ' ||INIT_TABLE;
+  DBMS_OUTPUT.PUT_LINE(RUN_STRING); 
+  EXECUTE IMMEDIATE RUN_STRING ;
+  FOR I IN CUR_T1 LOOP
+    RUN_STRING := 'insert into ' || INIT_TABLE || '(col2,col3) values(:1,:2) returning col2 into :3';
+    DBMS_OUTPUT.PUT_LINE(RUN_STRING);
+    EXECUTE IMMEDIATE RUN_STRING USING I.COL1,I.COL2 RETURNING INTO INIT_COL2;
+    DBMS_OUTPUT.PUT_LINE('col2 = ' || INIT_COL2);        
+  END LOOP;
+  COMMIT; 
+END;
+/
+```
+
+注意：
+
+- 动态SQL也可以使用绑定变量。
+- 关键字“returning”可以和带绑定变量的目标SQL连用，可以把对应的字段值取出来。
+
+#### 5.2.2.3 PL/SQL中批量绑定
+
+可以一次处理一批数据，可以有效减少PL/SQL引擎和SQL引擎上下文切换的次数。
+
+PL/SQL引擎可以简单理解为专门用来处理PL/SQL代码中除了SQL语句外所有剩余部分（如变量、赋值、循环、数组等）的子系统，而SQL引擎则是专门处理SQL语句的子系统，PL/SQL引擎和SQL引擎的切换就是他们之间的交互。
+
+交互影响代码性能的地方为：
+
+- 显示游标或参考游标需要循环执行Fetch操作时，这里的循环操作需要PL/SQL引擎来处理，而Fetch一条记录对应要执行的SQL语句则需要SQL引擎来处理，索引如果不做任何优化，那么这里每Fetch一条记录，PL/SQL引擎就需要和SQL引擎交互一次。
+- 显示游标和参考游标也是。
+
+所以，如果能一次Fetch一批记录或者在PL/SQL代码里一次执行一批SQL语句，就可以有效减少PL/SQL引擎和SQL引擎交互的次数，就可以达到提高性能的目的。
+
+**语法：**
+
+```sql
+fetch cursorname bulk collect into [自定义数组] <limit cn_batch_size>
+```
+
+这里的关键字 “ limit cn_batch_size”表示一批Fetch的数量，通常为1000。这个关键字不是必须，如果不用，则一次全部取出。用法如下：
+
+```sql
+for i in 1 .. [自定义的长度]
+	execute immediate [带绑定变量的sql] using [对应变量的输入值]
+```
+
+示例：
+
+```sql
+declare
+  a number := 0;
+  cur_t1     sys_refcursor;
+  run_string varchar2(2000);
+  run_num number;
+  type col1_arr is table of varchar2(10); --数组
+  init_clo1 col1_arr;
+  CN_BATCH_SIZE constant pls_integer := 1000;
+begin
+  run_string := 'select col1 from test.t1 where col1 <= :1';
+  open cur_t1 for run_string using 2000;
+  loop
+    a := a + 1;
+    fetch cur_t1 bulk collect into init_clo1 limit CN_BATCH_SIZE;
+    for i in 1 .. init_clo1.count loop
+      run_num := cur_t1%rowcount;
+      --dbms_output.put_line(init_clo1(i));
+    end loop;       
+    dbms_output.put_line('a='||a);       
+    exit when init_clo1.count < CN_BATCH_SIZE; --退出
+    dbms_output.put_line('run_num=' || run_num);
+  end loop;
+  close cur_t1;
+end;
+/
+```
+
+
+
 # 六、查询转换
 
 # 七、统计信息
