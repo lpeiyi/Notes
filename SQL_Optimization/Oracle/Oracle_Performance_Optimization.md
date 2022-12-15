@@ -1592,10 +1592,38 @@ Explicit Cursor，常用于PL/SQL代码（如存储过程、函数、Package）�
 示例：
 
 ```sql
-
+declare
+  run_string clob;
+  RUN_NUM NUMBER;
+  INTT_COL1  TEST.T1.COL1%TYPE;
+  INTT_COL2  TEST.T1.COL2%TYPE;
+  cursor cur_t1 is select col1, col2 from test.t1 where rownum <= 10;
+begin
+  IF CUR_T1%ISOPEN = FALSE THEN
+    dbms_output.put_line('游标未打开');
+    OPEN CUR_T1;
+  END IF;
+  loop
+    FETCH CUR_T1
+      INTO INTT_COL1, INTT_COL2;
+    dbms_output.put_line(INTT_COL1 || ' ' || INTT_COL2);
+    IF CUR_T1%NOTFOUND THEN
+      EXIT;
+    END IF;
+  end loop;
+  RUN_NUM := CUR_T1%ROWCOUNT;
+  dbms_output.put_line(RUN_NUM);
+  CLOSE CUR_T1;
+EXCEPTION
+  WHEN OTHERS THEN
+    IF CUR_T1%ISOPEN THEN
+      dbms_output.put_line('游标未关闭');
+      close cur_t1;
+    END IF;
+    RETURN;
+end;
+/
 ```
-
-
 
 ##### 5.1.2.2.3 参考游标 - 动态游标
 
@@ -1677,8 +1705,6 @@ Bind variable是一种特殊类型的变量，又被称为占位符（Placeholde
 
 #### 5.2.2.1 PL/SQL中select语句使用绑定变量
 
-
-
 ```sql
 declare
   e_no number;
@@ -1698,9 +1724,91 @@ execute immediate '待绑定变量的SQL文本'  using '绑定变量具体的输
 
 #### 5.2.2.2 PL/SQL中DML语句使用绑定变量
 
+```SQL
+DECLARE
+  RUN_STRING CLOB;
+  INIT_COL2 VARCHAR2(10);
+  INIT_TABLE VARCHAR2(10);
+  CURSOR CUR_T1 IS SELECT COL1, COL2 FROM TEST.T1 WHERE ROWNUM <= 10;
+BEGIN
+  INIT_TABLE := 'test.t2';
+  DBMS_OUTPUT.PUT_LINE(INIT_TABLE);    
+  RUN_STRING := 'truncate table ' ||INIT_TABLE;
+  DBMS_OUTPUT.PUT_LINE(RUN_STRING); 
+  EXECUTE IMMEDIATE RUN_STRING ;
+  FOR I IN CUR_T1 LOOP
+    RUN_STRING := 'insert into ' || INIT_TABLE || '(col2,col3) values(:1,:2) returning col2 into :3';
+    DBMS_OUTPUT.PUT_LINE(RUN_STRING);
+    EXECUTE IMMEDIATE RUN_STRING USING I.COL1,I.COL2 RETURNING INTO INIT_COL2;
+    DBMS_OUTPUT.PUT_LINE('col2 = ' || INIT_COL2);        
+  END LOOP;
+  COMMIT; 
+END;
+/
+```
+
+注意：
+
+- 动态SQL也可以使用绑定变量。
+- 关键字“returning”可以和带绑定变量的目标SQL连用，可以把对应的字段值取出来。
+
+#### 5.2.2.3 PL/SQL中批量绑定
+
+可以一次处理一批数据，可以有效减少PL/SQL引擎和SQL引擎上下文切换的次数。
+
+PL/SQL引擎可以简单理解为专门用来处理PL/SQL代码中除了SQL语句外所有剩余部分（如变量、赋值、循环、数组等）的子系统，而SQL引擎则是专门处理SQL语句的子系统，PL/SQL引擎和SQL引擎的切换就是他们之间的交互。
+
+交互影响代码性能的地方为：
+
+- 显示游标或参考游标需要循环执行Fetch操作时，这里的循环操作需要PL/SQL引擎来处理，而Fetch一条记录对应要执行的SQL语句则需要SQL引擎来处理，索引如果不做任何优化，那么这里每Fetch一条记录，PL/SQL引擎就需要和SQL引擎交互一次。
+- 显示游标和参考游标也是。
+
+所以，如果能一次Fetch一批记录或者在PL/SQL代码里一次执行一批SQL语句，就可以有效减少PL/SQL引擎和SQL引擎交互的次数，就可以达到提高性能的目的。
+
+**语法：**
+
+```sql
+fetch cursorname bulk collect into [自定义数组] <limit cn_batch_size>
+```
+
+这里的关键字 “ limit cn_batch_size”表示一批Fetch的数量，通常为1000。这个关键字不是必须，如果不用，则一次全部取出。用法如下：
+
+```sql
+for i in 1 .. [自定义的长度]
+	execute immediate [带绑定变量的sql] using [对应变量的输入值]
+```
+
+示例：
+
+```sql
+declare
+  a number := 0;
+  cur_t1     sys_refcursor;
+  run_string varchar2(2000);
+  run_num number;
+  type col1_arr is table of varchar2(10); --数组
+  init_clo1 col1_arr;
+  CN_BATCH_SIZE constant pls_integer := 1000;
+begin
+  run_string := 'select col1 from test.t1 where col1 <= :1';
+  open cur_t1 for run_string using 2000;
+  loop
+    a := a + 1;
+    fetch cur_t1 bulk collect into init_clo1 limit CN_BATCH_SIZE;
+    for i in 1 .. init_clo1.count loop
+      run_num := cur_t1%rowcount;
+      --dbms_output.put_line(init_clo1(i));
+    end loop;       
+    dbms_output.put_line('a='||a);       
+    exit when init_clo1.count < CN_BATCH_SIZE; --退出
+    dbms_output.put_line('run_num=' || run_num);
+  end loop;
+  close cur_t1;
+end;
+/
+```
 
 
-#### 5.2.2.3 PL/SQL中语句使用绑定变量
 
 # 六、查询转换
 
